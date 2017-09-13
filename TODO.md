@@ -3,6 +3,7 @@
 - [ ] Publish
 - [ ] Close
 - [ ] Subscribe + Options
+- [ ] Unsubscribe
 - [ ] Async Publish
 - [ ] Non-borrowed connection
 - [ ] Tests

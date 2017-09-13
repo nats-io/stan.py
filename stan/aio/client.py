@@ -55,6 +55,9 @@ class Client:
         # Map of guid to futures which are signaled when the ack is processed.
         self._pub_ack_map = {}
 
+        # Map of subscriptions related to the NATS Streaming session.
+        self._sub_map = {}
+
     async def connect(self, cluster_id, client_id,
                       nats=None,
                       connect_timeout=DEFAULT_CONNECT_TIMEOUT,
@@ -168,10 +171,11 @@ class Client:
         self._pub_ack_map[guid] = future
 
         try:
-            await self._nc.publish_request(stan_subject,
-                                           self._ack_subject,
-                                           pe.SerializeToString(),
-                                           )
+            await self._nc.publish_request(
+                stan_subject,
+                self._ack_subject,
+                pe.SerializeToString(),
+                )
             await asyncio.wait_for(future, ack_wait, loop=self._loop)
         except Exception as e:
             # Remove pending future before raising error.
@@ -213,7 +217,20 @@ class Client:
         """
         Close terminates a session with NATS Streaming.
         """
-        pass
+        req = stan.pb.protocol.CloseRequest()
+        req.clientID = self._client_id
+        msg = await self._nc.timed_request(
+            self._close_req_subject,
+            req.SerializeToString(),
+            self._connect_timeout,
+            )
+        resp = stan.pb.protocol.CloseResponse()
+        resp.ParseFromString(msg.data)
+
+        # TODO: check error
+        # TODO: remove all the related subscriptions
+        # TODO: remove the core NATS Streaming subscriptions
+        # TODO: close connection if it was borrowed
 
 def new_guid():
     return "%x" % random.SystemRandom().getrandbits(0x58)
