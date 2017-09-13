@@ -1,3 +1,5 @@
+# Copyright 2017 Apcera Inc. All rights reserved.
+
 import asyncio
 from nats.aio.client import Client as NATS
 from stan.aio.client import Client as STAN

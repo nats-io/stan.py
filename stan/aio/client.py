@@ -149,6 +149,47 @@ class Client:
             # Just skip the pub ack
             return
 
+    async def _process_msg(self, raw_msg):
+        """
+        Receives the msgs from the STAN subscriptions and replies.
+        By default it will reply back with an ack unless manual acking
+        was specified in one of the subscription options.
+        """
+        msg = Msg()
+
+        msg_proto = stan.pb.protocol.MsgProto()
+        msg_proto.ParseFromString(raw_msg.data)
+        msg.proto = msg_proto
+
+        try:
+            sub = self._sub_map[raw_msg.subject]
+            msg.sub = sub
+        except KeyError:
+            # FIXME: async callback to signal error?
+            return
+
+        # Yield the message to the subscription callback.
+        await sub.cb(msg)
+
+        if not sub.manual_acks:
+            # Process auto-ack if not done manually in the callback,
+            # by publishing into the ack inbox from the subscription.
+            msg_ack = stan.pb.protocol.Ack()
+            msg_ack.subject = msg.proto.subject
+            msg_ack.sequence = msg.proto.sequence
+            await self._nc.publish(sub.ack_inbox, msg_ack.SerializeToString())
+
+    async def ack(self, msg):
+        """
+        Used to manually acks a message.
+
+        :param msg: Message which is pending to be acked by client.
+        """
+        ack_proto = stan.pb.protocol.Ack()
+        ack_proto.subject = msg.proto.subject
+        ack_proto.sequence = msg.proto.sequence
+        await self._nc.publish(msg.sub.ack_inbox, ack_proto.SerializeToString())
+
     async def publish(self, subject, payload,
                       ack_handler=None,
                       ack_wait=DEFAULT_ACK_WAIT,
@@ -163,7 +204,6 @@ class Client:
         :param ack_handler: Optional handler for async publishing.
         :param ack_wait: How long in seconds to wait for an ack to be received.
         """
-
         stan_subject = ''.join([self._pub_prefix, '.', subject])
         guid = new_guid()
         pe = stan.pb.protocol.PubMsg()
@@ -195,15 +235,24 @@ class Client:
             raise e
 
     async def subscribe(self, subject,
-                  start_at='',
-                  deliver_all_available=False,
-                  sequence=None,
-                  time=None,
-                  manual_acks=False,
-                  ack_wait=None,
-                  ):
+                        cb=None,
+                        start_at=None,
+                        deliver_all_available=False,
+                        sequence=None,
+                        time=None,
+                        manual_acks=False,
+                        queue=None,
+                        ack_wait=DEFAULT_ACK_WAIT,
+                        max_inflight=DEFAULT_MAX_INFLIGHT,
+                        durable_name=None,
+                        ):
         """
+        :param subject: Subject for the NATS Streaming subscription.
+
+        :param cb: Callback which will be dispatched the
+
         :param start_at: One of the following options:
+           - 'new_only' (default)
            - 'first'
            - 'sequence'
            - 'last_received'
@@ -221,8 +270,62 @@ class Client:
 
         :param ack_wait: How long to wait for an ack before being redelivered
         previous messages.
+
+        :param durable_name: Name of the durable subscription.
         """
-        pass
+        sub = Subscription(subject=subject, queue=queue, cb=cb, manual_acks=manual_acks)
+        self._sub_map[sub.inbox] = sub
+
+        # Should create the NATS Subscription before making the request.
+        sid = await self._nc.subscribe(sub.inbox, cb=self._process_msg)
+        sub.sid = sid
+
+        req = stan.pb.protocol.SubscriptionRequest()
+        req.clientID = self._client_id
+        req.maxInFlight = max_inflight
+        req.ackWaitInSecs = ack_wait
+
+        if queue is not None:
+            req.qGroup = queue
+
+        if durable_name is not None:
+            req.durableName = durable_name
+
+        # Normalize start position options.
+        if start_at is None or start_at == 'new_only':
+            req.startPosition = stan.pb.protocol.NewOnly
+        elif start_at == 'last_received':
+            req.startPosition = stan.pb.protocol.LastReceived
+        elif start_at == 'time':
+            req.startPosition = stan.pb.protocol.TimeDeltaStart
+            # TODO:
+            # req.startTimeDelta...
+        elif start_at == 'sequence':
+            req.startPosition = stan.pb.protocol.SequenceStart
+
+            # TODO: Check that sequence is defined or error out.
+            req.startSequence = sequence
+        elif start_at == 'first' or start_at == 'beginning' or deliver_all_available:
+            req.startPosition = stan.pb.protocol.First
+
+        # Set STAN subject and NATS inbox where we will be awaiting
+        # for the messages to be delivered.
+        req.subject = subject
+        req.inbox = sub.inbox
+
+        msg = await self._nc.timed_request(
+            self._sub_req_subject,
+            req.SerializeToString(),
+            self._connect_timeout,
+            )
+        resp = stan.pb.protocol.SubscriptionResponse()
+        resp.ParseFromString(msg.data)
+
+        # If there is an error here, then rollback the
+        # subscription which we have sent already.
+        sub.ack_inbox = resp.ackInbox
+
+        return sub
 
     async def close(self):
         """
@@ -242,6 +345,51 @@ class Client:
         # TODO: remove all the related subscriptions
         # TODO: remove the core NATS Streaming subscriptions
         # TODO: close connection if it was borrowed
+
+class Subscription(object):
+
+    def __init__(self,
+                 subject='',
+                 queue='',
+                 cb=None,
+                 sid=None,
+                 durable_name=None,
+                 ack_inbox=None,
+                 manual_acks=False,
+                 ):
+        self.subject = subject
+        self.queue = queue
+        self.cb = cb
+        self.inbox = new_guid()
+        self.sid = sid
+        self.ack_inbox = ack_inbox
+        self.durable_name = durable_name
+        self.manual_acks = manual_acks
+
+class Msg(object):
+
+    def __init__(self):
+        self.proto = None
+        self.sub = None
+
+    @property
+    def data(self):
+        return self.proto.data
+
+    @property
+    def sequence(self):
+        return self.proto.sequence
+
+    @property
+    def seq(self):
+        return self.proto.sequence
+
+    @property
+    def timestamp(self):
+        return self.proto.timestamp
+
+    def __repr__(self):
+        return "<nats streaming msg sequence={}, time={}>".format(self.proto.sequence, self.proto.timestamp)
 
 def new_guid():
     return "%x" % random.SystemRandom().getrandbits(0x58)

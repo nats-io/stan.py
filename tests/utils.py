@@ -1,6 +1,9 @@
+# Copyright 2017 Apcera Inc. All rights reserved.
+
 import os
 import time
 import signal
+import random
 import json
 import asyncio
 import subprocess
@@ -161,3 +164,6 @@ def async_test(test_case_fun, timeout=10):
                              timeout,
                              loop=test_case.loop))
     return wrapper
+
+def generate_client_id():
+    return "%x" % random.SystemRandom().getrandbits(0x58)
