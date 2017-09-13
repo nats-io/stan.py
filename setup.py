@@ -12,11 +12,11 @@ setup(
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.6'
         ],
-    url='https://github.com/nats-io/asyncio-nats',
+    url='https://github.com/nats-io/asyncio-nats-streaming',
     author='Waldemar Quevedo',
     author_email='wally@apcera.com',
     license='MIT License',
-    packages=['nats', 'nats.aio', 'nats.protocol'],
+    packages=['stan', 'stan.aio', 'stan.pb'],
     zip_safe=True,
     install_requires=['protobuf>=3.4'],
 )
