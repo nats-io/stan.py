@@ -10,7 +10,7 @@ async def run(loop):
 
     # Start session with NATS Streaming cluster.
     sc = STAN()
-    await sc.connect("test-cluster", nats=nc)
+    await sc.connect("test-cluster", "client-456", nats=nc)
 
     # Publish a couple of messages
     await sc.publish("hi", b'hello')
@@ -18,6 +18,9 @@ async def run(loop):
 
     # Subscribe to get all messages since beginning.
     await sc.subscribe("hi", start_at='first')
+
+    # Wrap up NATS Streaming session
+    await sc.close()
 
     # We are using a borrowed connection so we need to close manually.
     await nc.close()
