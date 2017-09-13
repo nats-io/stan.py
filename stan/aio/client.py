@@ -1,8 +1,8 @@
 # Copyright 2017 Apcera Inc. All rights reserved.
 
 import asyncio
-import stan.pb.protocol
 import random
+import stan.pb.protocol
 
 __version__ = '0.1.0'
 
@@ -57,6 +57,9 @@ class Client:
 
         # Map of subscriptions related to the NATS Streaming session.
         self._sub_map = {}
+
+    def __repr__(self):
+        return "<nats streaming client v{}>".format(__version__)
 
     async def connect(self, cluster_id, client_id,
                       nats=None,
@@ -121,10 +124,16 @@ class Client:
         self._sub_close_req_subject = resp.subCloseRequests
 
     async def _process_heartbeats(self, hb):
+        """
+        Receives heartbeats sent to the client by the server.
+        """
         print("HB:", hb)
         pass
 
     async def _process_ack(self, msg):
+        """
+        Receives acks from the publishes via the _STAN.acks subscription.
+        """
         pub_ack = stan.pb.protocol.PubAck()
         pub_ack.ParseFromString(msg.data)
 
@@ -135,6 +144,7 @@ class Client:
         try:
             future = self._pub_ack_map[pub_ack.guid]
             future.set_result(pub_ack)
+            del self._pub_ack_map[pub_ack.guid]
         except KeyError:
             # Just skip the pub ack
             return
@@ -177,6 +187,7 @@ class Client:
                 pe.SerializeToString(),
                 )
             await asyncio.wait_for(future, ack_wait, loop=self._loop)
+            return future.result()
         except Exception as e:
             # Remove pending future before raising error.
             future.cancel()
