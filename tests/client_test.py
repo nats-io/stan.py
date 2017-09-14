@@ -95,6 +95,47 @@ class ClientTest(SingleServerTestCase):
         await nc.close()
         self.assertFalse(nc.is_connected)
 
+    @async_test
+    async def test_unsubscribe_from_new_messages(self):
+        nc = NATS()
+        await nc.connect(io_loop=self.loop)
+
+        sc = STAN()
+        await sc.connect("test-cluster", generate_client_id(), nats=nc)
+
+        # Publish a some messages
+        msgs = []
+
+        async def cb(msg):
+            nonlocal msgs
+            msgs.append(msg)
+
+        # Start a subscription and wait to receive all the messages
+        # which have been sent so far.
+        sub = await sc.subscribe("hi", cb=cb)
+
+        for i in range(0, 5):
+            await sc.publish("hi", b'hello')
+
+        # Stop receiving new messages
+        await sub.unsubscribe()
+
+        for i in range(0, 5):
+            await sc.publish("hi", b'hello')
+
+        try:
+            asyncio.sleep(2, loop=self.loop)
+        except:
+            pass
+
+        self.assertEqual(len(msgs), 5)
+        for i in range(0, 5):
+            m = msgs[i]
+            self.assertEqual(m.sequence, i+1)
+
+        await nc.close()
+        self.assertFalse(nc.is_connected)
+
 if __name__ == '__main__':
     runner = unittest.TextTestRunner(stream=sys.stdout)
     unittest.main(verbosity=2, exit=False, testRunner=runner)

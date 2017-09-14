@@ -273,7 +273,13 @@ class Client:
 
         :param durable_name: Name of the durable subscription.
         """
-        sub = Subscription(subject=subject, queue=queue, cb=cb, manual_acks=manual_acks)
+        sub = Subscription(
+            subject=subject,
+            queue=queue,
+            cb=cb,
+            manual_acks=manual_acks,
+            stan=self,
+            )
         self._sub_map[sub.inbox] = sub
 
         # Should create the NATS Subscription before making the request.
@@ -356,6 +362,7 @@ class Subscription(object):
                  durable_name=None,
                  ack_inbox=None,
                  manual_acks=False,
+                 stan=None,
                  ):
         self.subject = subject
         self.queue = queue
@@ -365,6 +372,38 @@ class Subscription(object):
         self.ack_inbox = ack_inbox
         self.durable_name = durable_name
         self.manual_acks = manual_acks
+        self._sc = stan
+        self._nc = stan._nc
+
+    async def unsubscribe(self):
+        """
+        Remove subscription on a topic in this client.
+        """
+        await self._nc.unsubscribe(self.sid)
+
+        try:
+            del self._sc._sub_map[self.inbox]
+        except KeyError:
+            pass
+
+        req = stan.pb.protocol.UnsubscribeRequest()
+        req.clientID = self._sc._client_id
+        req.subject = self.subject
+        req.inbox = self.ack_inbox
+
+        if self.durable_name is not None:
+            req.durableName = self.durable_name
+
+        msg = await self._nc.timed_request(
+            self._sc._unsub_req_subject,
+            req.SerializeToString(),
+            self._sc._connect_timeout,
+            )
+        resp = stan.pb.protocol.SubscriptionResponse()
+        resp.ParseFromString(msg.data)
+
+        # TODO: handling on unsubscribe errors
+        # resp.error...
 
 class Msg(object):
 
