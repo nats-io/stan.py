@@ -16,15 +16,25 @@ async def run(loop):
 
     # Synchronous Publisher, does not return until an ack
     # has been received from NATS Streaming.
-    await sc.publish("hi", b'hello')
-    await sc.publish("hi", b'world')
+    for i in range(0, 10):
+        await sc.publish("foo", 'hello-{}'.format(i).encode())
 
-    async def cb(msg):
+    msgs = []
+    future = asyncio.Future(loop=loop)
+    def cb(msg):
         print("Received a message (seq={}): {}".format(msg.seq, msg.data))
+        msgs.append(msg)
+        if len(msgs) >= 10:
+            future.set_result(True)
 
     # Subscribe to get all messages since beginning.
-    sub = await sc.subscribe("hi", start_at='first', cb=cb)
-    await sub.unsubscribe()
+    await sc.subscribe("foo", start_at='last_received', cb=cb)
+
+    # Receive all stored values in order
+    await sc.subscribe("foo", deliver_all_available=True, cb=cb)
+
+    # Receive messages starting at a specific sequence number
+    await sc.subscribe("foo", start_at="sequence", sequence=3, cb=cb)
 
     # Close NATS Streaming session
     await sc.close()

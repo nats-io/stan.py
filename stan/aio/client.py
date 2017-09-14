@@ -123,12 +123,11 @@ class Client:
         self._close_req_subject = resp.closeRequests
         self._sub_close_req_subject = resp.subCloseRequests
 
-    async def _process_heartbeats(self, hb):
+    async def _process_heartbeats(self, msg):
         """
         Receives heartbeats sent to the client by the server.
         """
-        print("HB:", hb)
-        pass
+        await self._nc.publish(msg.reply, b'')
 
     async def _process_ack(self, msg):
         """
@@ -298,7 +297,9 @@ class Client:
             req.durableName = durable_name
 
         # Normalize start position options.
-        if start_at is None or start_at == 'new_only':
+        if deliver_all_available:
+            req.startPosition = stan.pb.protocol.First
+        elif start_at is None or start_at == 'new_only':
             req.startPosition = stan.pb.protocol.NewOnly
         elif start_at == 'last_received':
             req.startPosition = stan.pb.protocol.LastReceived
@@ -309,9 +310,9 @@ class Client:
         elif start_at == 'sequence':
             req.startPosition = stan.pb.protocol.SequenceStart
 
-            # TODO: Check that sequence is defined or error out.
+            # TODO: Check that sequence is defined too or error out.
             req.startSequence = sequence
-        elif start_at == 'first' or start_at == 'beginning' or deliver_all_available:
+        elif start_at == 'first' or start_at == 'beginning':
             req.startPosition = stan.pb.protocol.First
 
         # Set STAN subject and NATS inbox where we will be awaiting
