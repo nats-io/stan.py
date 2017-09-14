@@ -79,7 +79,6 @@ await sc.subscribe("foo", start_at="sequence", sequence=3)
 
 # Subscribe starting at a specific time by giving a unix timestamp
 # with an optional nanoseconds fraction
-# TODO
 ```
 
 ### Durable subscriptions
@@ -134,8 +133,9 @@ group.
 
 ### Durable Queue Group
 
-A durable queue group allows you to have all members leave but still maintain state. When a member re-joins,
-it starts at the last position in that group.
+A durable queue group allows you to have all members leave but still
+maintain state. When a member re-joins, it starts at the last position
+in that group.
 
 #### Creating a Durable Queue Group
 
