@@ -22,6 +22,7 @@ async def run(loop):
     msgs = []
     future = asyncio.Future(loop=loop)
     def cb(msg):
+        nonlocal msgs
         print("Received a message (seq={}): {}".format(msg.seq, msg.data))
         msgs.append(msg)
         if len(msgs) >= 10:

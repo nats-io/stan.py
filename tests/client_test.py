@@ -9,6 +9,8 @@ import unittest
 from tests.utils import async_test, generate_client_id, start_nats_streaming, \
      StanTestCase, SingleServerTestCase
 
+from time import time
+
 class ClientTest(SingleServerTestCase):
 
     @async_test
@@ -132,6 +134,70 @@ class ClientTest(SingleServerTestCase):
         for i in range(0, 5):
             m = msgs[i]
             self.assertEqual(m.sequence, i+1)
+
+        await nc.close()
+        self.assertFalse(nc.is_connected)
+
+    @async_test
+    async def test_receiving_multiple_subscriptions(self):
+        nc = NATS()
+        await nc.connect(io_loop=self.loop)
+
+        sc = STAN()
+        await sc.connect("test-cluster", generate_client_id(), nats=nc)
+
+        msgs_a, msgs_b, msgs_c = [], [], []
+        async def cb_a(msg):
+            nonlocal msgs_a
+            # Will not block the dispatching of messages to other subscriptions.
+            await asyncio.sleep(0.1, loop=self.loop)
+            msgs_a.append(msg)
+
+        async def cb_b(msg):
+            nonlocal msgs_b
+            msgs_b.append(msg)
+
+        async def cb_c(msg):
+            nonlocal msgs_c
+            msgs_c.append(msg)
+
+        # Start a subscription and wait to receive all the messages
+        # which have been sent so far.
+        sub_a = await sc.subscribe("hi", cb=cb_a)
+        sub_b = await sc.subscribe("hi", cb=cb_b)
+        sub_c = await sc.subscribe("hi", cb=cb_c)
+
+        # All should receive all messages
+        for i in range(0, 5):
+            await sc.publish("hi", "hello-{}".format(i).encode())
+
+        try:
+            await asyncio.sleep(0.25, loop=self.loop)
+        except:
+            pass
+
+        # Stop receiving new messages
+        await sub_a.unsubscribe()
+        await sub_b.unsubscribe()
+        await sub_c.unsubscribe()
+
+        # No one will receive these messsages
+        for i in range(0, 5):
+            await sc.publish("hi", b'hello')
+
+        all_msgs = [msgs_b, msgs_c]
+        for msgs in all_msgs:
+            self.assertEqual(len(msgs), 5)
+            for i in range(0, 5):
+                m = msgs[i]
+                self.assertEqual(m.sequence, i+1)
+                self.assertEqual(m.data, 'hello-{}'.format(i).encode())
+
+        # This one was slower at processing the messages,
+        # so it should have gotten only a couple.
+        self.assertEqual(len(msgs_a), 2)
+        for i in range(0, 2):
+            m = msgs_a[i]
 
         await nc.close()
         self.assertFalse(nc.is_connected)

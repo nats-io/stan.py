@@ -22,6 +22,10 @@ DEFAULT_CONNECT_TIMEOUT = 2
 # Max number of inflight pub acks
 DEFAULT_MAX_PUB_ACKS_INFLIGHT = 16384
 
+# Max number of pending messages awaiting
+# to be processed on a single subscriptions.
+DEFAULT_PENDING_LIMIT = 8192
+
 class Client:
     """
     Asyncio Client for NATS Streaming.
@@ -148,35 +152,36 @@ class Client:
             # Just skip the pub ack
             return
 
-    async def _process_msg(self, raw_msg):
+    async def _process_msg(self, sub):
         """
         Receives the msgs from the STAN subscriptions and replies.
         By default it will reply back with an ack unless manual acking
         was specified in one of the subscription options.
         """
-        msg = Msg()
+        while True:
+            try:
+                raw_msg = await sub._msgs_queue.get()
+                msg = Msg()
+                msg_proto = stan.pb.protocol.MsgProto()
+                msg_proto.ParseFromString(raw_msg.data)
+                msg.proto = msg_proto
+                msg.sub = sub
 
-        msg_proto = stan.pb.protocol.MsgProto()
-        msg_proto.ParseFromString(raw_msg.data)
-        msg.proto = msg_proto
+                # Yield the message to the subscription callback.
+                await sub.cb(msg)
 
-        try:
-            sub = self._sub_map[raw_msg.subject]
-            msg.sub = sub
-        except KeyError:
-            # FIXME: async callback to signal error?
-            return
-
-        # Yield the message to the subscription callback.
-        await sub.cb(msg)
-
-        if not sub.manual_acks:
-            # Process auto-ack if not done manually in the callback,
-            # by publishing into the ack inbox from the subscription.
-            msg_ack = stan.pb.protocol.Ack()
-            msg_ack.subject = msg.proto.subject
-            msg_ack.sequence = msg.proto.sequence
-            await self._nc.publish(sub.ack_inbox, msg_ack.SerializeToString())
+                if not sub.manual_acks:
+                    # Process auto-ack if not done manually in the callback,
+                    # by publishing into the ack inbox from the subscription.
+                    msg_ack = stan.pb.protocol.Ack()
+                    msg_ack.subject = msg.proto.subject
+                    msg_ack.sequence = msg.proto.sequence
+                    await self._nc.publish(sub.ack_inbox, msg_ack.SerializeToString())
+            except asyncio.CancelledError:
+                break
+            except:
+                # FIXME: async callback to signal error
+                continue
 
     async def ack(self, msg):
         """
@@ -244,6 +249,7 @@ class Client:
                         ack_wait=DEFAULT_ACK_WAIT,
                         max_inflight=DEFAULT_MAX_INFLIGHT,
                         durable_name=None,
+                        pending_limits=DEFAULT_PENDING_LIMIT,
                         ):
         """
         :param subject: Subject for the NATS Streaming subscription.
@@ -271,6 +277,9 @@ class Client:
         previous messages.
 
         :param durable_name: Name of the durable subscription.
+
+        :param: pending_limits: Max number of messages to await in subscription
+        before it becomes a slow consumer.
         """
         sub = Subscription(
             subject=subject,
@@ -281,8 +290,17 @@ class Client:
             )
         self._sub_map[sub.inbox] = sub
 
+        # Have the message processing task ready before making the subscription.
+        sub._msgs_queue = asyncio.Queue(maxsize=pending_limits, loop=self._loop)
+        sub._msgs_task = self._loop.create_task(self._process_msg(sub))
+
+        # Helper coroutine which will just 
+        async def cb(raw_msg):
+            nonlocal sub
+            await sub._msgs_queue.put(raw_msg)
+
         # Should create the NATS Subscription before making the request.
-        sid = await self._nc.subscribe(sub.inbox, cb=self._process_msg)
+        sid = await self._nc.subscribe(sub.inbox, cb=cb)
         sub.sid = sid
 
         req = stan.pb.protocol.SubscriptionRequest()
@@ -328,7 +346,7 @@ class Client:
         resp = stan.pb.protocol.SubscriptionResponse()
         resp.ParseFromString(msg.data)
 
-        # If there is an error here, then rollback the
+        # TODO: If there is an error here, then rollback the
         # subscription which we have sent already.
         sub.ack_inbox = resp.ackInbox
 
@@ -364,6 +382,8 @@ class Subscription(object):
                  ack_inbox=None,
                  manual_acks=False,
                  stan=None,
+                 msgs_queue=None,
+                 msgs_task=None,
                  ):
         self.subject = subject
         self.queue = queue
@@ -375,6 +395,8 @@ class Subscription(object):
         self.manual_acks = manual_acks
         self._sc = stan
         self._nc = stan._nc
+        self._msgs_queue = msgs_queue
+        self._msgs_task = msgs_task
 
     async def unsubscribe(self):
         """
@@ -383,6 +405,9 @@ class Subscription(object):
         await self._nc.unsubscribe(self.sid)
 
         try:
+            # Stop the processing task for the subscription.
+            sub = self._sc._sub_map[self.inbox]
+            sub._msgs_task.cancel()
             del self._sc._sub_map[self.inbox]
         except KeyError:
             pass
