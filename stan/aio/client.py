@@ -92,6 +92,10 @@ class Client:
         self._hb_inbox = new_guid()
         self._ack_subject = DEFAULT_ACKS_SUBJECT % new_guid()
 
+        # Pending pub acks inflight
+        self._pending_pub_acks_queue = asyncio.Queue(
+            maxsize=max_pub_acks_inflight, loop=self._loop)
+
         # Heartbeats subscription
         self._hb_inbox_sid = await self._nc.subscribe(
             self._hb_inbox,
@@ -140,8 +144,9 @@ class Client:
         pub_ack = stan.pb.protocol.PubAck()
         pub_ack.ParseFromString(msg.data)
 
-        # TODO: Unblock pending acks queue
-        # TODO: Benchmarking tools
+        # Unblock pending acks queue if required.
+        if not self._pending_pub_acks_queue.empty():
+            await self._pending_pub_acks_queue.get()
 
         try:
             cb = self._pub_ack_map[pub_ack.guid]
@@ -217,6 +222,9 @@ class Client:
         pe.guid = guid
         pe.subject = subject
         pe.data = payload
+
+        # Control max inflight pubs for the client with a buffered queue.
+        await self._pending_pub_acks_queue.put(None)
 
         # Process asynchronously if a handler is given.
         if ack_handler is not None:

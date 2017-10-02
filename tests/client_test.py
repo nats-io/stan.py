@@ -70,8 +70,7 @@ class ClientTest(SingleServerTestCase):
         future = asyncio.Future(loop=self.loop)
         packs = []
 
-        # It will be receiving the ack which we will be controlling manually,
-        # instead of using the auto ack functionality.
+        # It will be receiving the ack which we will be controlling manually.
         async def cb(ack):
             nonlocal packs
             nonlocal future
@@ -92,6 +91,49 @@ class ClientTest(SingleServerTestCase):
 
         # Check that we have cleaned up the pub ack map
         self.assertEqual(len(sc._pub_ack_map), 0)
+
+        await sc.close()
+        await nc.close()
+        self.assertFalse(nc.is_connected)
+
+    @async_test
+    async def test_async_publish_and_max_acks_inflight(self):
+        nc = NATS()
+        await nc.connect(io_loop=self.loop)
+
+        sc = STAN()
+        await sc.connect("test-cluster", generate_client_id(),
+                         nats=nc, max_pub_acks_inflight=5)
+
+        future = asyncio.Future(loop=self.loop)
+        packs = []
+
+        # It will be receiving the ack which we will be controlling manually,.
+        async def cb(ack):
+            nonlocal packs
+            nonlocal future
+            packs.append(ack)
+            if len(packs) >= 5:
+                await asyncio.sleep(0.5, loop=self.loop)
+
+        for i in range(0, 1024):
+            future = sc.publish("hi", b'hello', ack_handler=cb)
+            try:
+                await asyncio.wait_for(future, 0.2, loop=self.loop)
+            except Exception as e:
+                # Some of them will be timing out since giving up
+                # on being able to publish.
+                break
+
+        # Gave up with some published acks still awaiting
+        self.assertTrue(sc._pending_pub_acks_queue.qsize() > 1)
+
+        # Expect to have received all messages already by now.
+        self.assertEqual(len(packs), 5)
+
+        # Waiting some time will let us receive the rest of the messages.
+        await asyncio.sleep(2.5, loop=self.loop)
+        self.assertEqual(len(packs), 10)
 
         await sc.close()
         await nc.close()
