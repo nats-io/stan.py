@@ -56,6 +56,7 @@ class ClientTest(SingleServerTestCase):
         # Check that we have cleaned up the pub ack map
         self.assertEqual(len(sc._pub_ack_map), 0)
 
+        await sc.close()
         await nc.close()
         self.assertFalse(nc.is_connected)
 
@@ -94,6 +95,7 @@ class ClientTest(SingleServerTestCase):
             m = msgs[i]
             self.assertEqual(m.sequence, i+1)
 
+        await sc.close()
         await nc.close()
         self.assertFalse(nc.is_connected)
 
@@ -135,6 +137,7 @@ class ClientTest(SingleServerTestCase):
             m = msgs[i]
             self.assertEqual(m.sequence, i+1)
 
+        await sc.close()
         await nc.close()
         self.assertFalse(nc.is_connected)
 
@@ -199,8 +202,55 @@ class ClientTest(SingleServerTestCase):
         for i in range(0, 2):
             m = msgs_a[i]
 
+        await sc.close()
         await nc.close()
         self.assertFalse(nc.is_connected)
+
+    @async_test
+    async def test_closes_cleans_subscriptions(self):
+        nc = NATS()
+        await nc.connect(io_loop=self.loop)
+
+        sc = STAN()
+        await sc.connect("test-cluster", generate_client_id(), nats=nc)
+
+        # Publish a some messages
+        msgs = []
+        future = asyncio.Future(loop=self.loop)
+
+        async def cb(msg):
+            nonlocal msgs
+            msgs.append(msg)
+            if len(msgs) == 10:
+                future.set_result(True)
+
+        # Start a subscription and wait to receive all the messages
+        # which have been sent so far.
+        sub = await sc.subscribe("hi", cb=cb)
+
+        for i in range(0, 10):
+            await sc.publish("hi", b'hello')
+
+        try:
+            asyncio.wait_for(future, 2, loop=self.loop)
+        except:
+            pass
+
+        self.assertEqual(len(msgs), 10)
+        for i in range(0, 10):
+            m = msgs[i]
+            self.assertEqual(m.sequence, i+1)
+
+        # Need to cleanup STAN session before wrapping up NATS conn.
+        await sc.close()
+
+        # Should have removed acks and HBs subscriptions.
+        self.assertEqual(len(nc._subs), 0)
+        self.assertEqual()
+
+        await nc.close()
+        self.assertFalse(nc.is_connected)
+
 
 if __name__ == '__main__':
     runner = unittest.TextTestRunner(stream=sys.stdout)

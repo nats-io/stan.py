@@ -294,7 +294,8 @@ class Client:
         sub._msgs_queue = asyncio.Queue(maxsize=pending_limits, loop=self._loop)
         sub._msgs_task = self._loop.create_task(self._process_msg(sub))
 
-        # Helper coroutine which will just 
+        # Helper coroutine which will just put messages in to the queue,
+        # whenever the NATS client receives a message.
         async def cb(raw_msg):
             nonlocal sub
             await sub._msgs_queue.put(raw_msg)
@@ -366,10 +367,31 @@ class Client:
         resp = stan.pb.protocol.CloseResponse()
         resp.ParseFromString(msg.data)
 
-        # TODO: check error
-        # TODO: remove all the related subscriptions
-        # TODO: remove the core NATS Streaming subscriptions
+        # TODO: check error in the close response
         # TODO: close connection if it was borrowed
+
+        # Remove the core NATS Streaming subscriptions.
+        try:
+            if self._hb_inbox_sid is not None:
+                await self._nc.unsubscribe(self._hb_inbox_sid)
+                self._hb_inbox = None
+                self._hb_inbox_sid = None
+            if self._ack_subject_sid is not None:
+                await self._nc.unsubscribe(self._ack_subject_sid)
+                self._ack_subject = None
+                self._ack_subject_sid = None
+        except:
+            # FIXME: async error in case these fail?
+            pass
+
+        # Remove all the related subscriptions
+        for _, sub in self._sub_map.items():
+            sub._msgs_task.cancel()
+            try:
+                await self._nc.unsubscribe(sub.sid)
+            except:
+                continue
+        self._sub_map = None
 
 class Subscription(object):
 
