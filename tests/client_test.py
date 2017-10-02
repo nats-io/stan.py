@@ -3,6 +3,7 @@
 import asyncio
 from nats.aio.client import Client as NATS
 from stan.aio.client import Client as STAN
+from stan.aio.errors import *
 
 import sys
 import unittest
@@ -333,6 +334,75 @@ class ClientTest(SingleServerTestCase):
         await nc.close()
         self.assertFalse(nc.is_connected)
 
+    @async_test
+    async def test_connecting_with_dup_id(self):
+        nc = NATS()
+        await nc.connect(io_loop=self.loop)
+
+        sc = STAN()
+        client_id = generate_client_id()
+        await sc.connect("test-cluster", client_id, nats=nc)
+
+        sc_2 = STAN()
+        with self.assertRaises(StanError):
+            await sc_2.connect("test-cluster", client_id, nats=nc)
+
+        # Publish a some messages
+        msgs = []
+        future = asyncio.Future(loop=self.loop)
+
+        async def cb(msg):
+            nonlocal msgs
+            msgs.append(msg)
+            if len(msgs) == 10:
+                future.set_result(True)
+
+        # Start a subscription and wait to receive all the messages
+        # which have been sent so far.
+        sub = await sc.subscribe("hi", cb=cb)
+
+        for i in range(0, 10):
+            await sc.publish("hi", b'hello')
+
+        try:
+            asyncio.wait_for(future, 2, loop=self.loop)
+        except:
+            pass
+
+        self.assertEqual(len(msgs), 10)
+        for i in range(0, 10):
+            m = msgs[i]
+            self.assertEqual(m.sequence, i+1)
+
+        # Need to cleanup STAN session before wrapping up NATS conn.
+        await sc.close()
+
+        # Should have removed acks and HBs subscriptions.
+        self.assertEqual(len(nc._subs), 0)
+        scs = [sc, sc_2]
+        for s in scs:
+            self.assertEqual(s._hb_inbox, None)
+            self.assertEqual(s._hb_inbox_sid, None)
+            self.assertEqual(s._ack_subject, None)
+            self.assertEqual(s._ack_subject_sid, None)
+
+        await nc.close()
+        self.assertFalse(nc.is_connected)
+
+    @async_test
+    async def test_connect_timeout_wrong_cluster(self):
+        nc = NATS()
+        await nc.connect(io_loop=self.loop)
+
+        sc = STAN()
+        client_id = generate_client_id()
+
+        with self.assertRaises(ErrConnectReqTimeout):
+            await sc.connect("test-cluster-missing", client_id,
+                             nats=nc, connect_timeout=0.1)
+
+        await nc.close()
+        self.assertFalse(nc.is_connected)
 
 if __name__ == '__main__':
     runner = unittest.TextTestRunner(stream=sys.stdout)

@@ -3,6 +3,7 @@
 import asyncio
 import random
 import stan.pb.protocol
+from stan.aio.errors import *
 
 __version__ = '0.1.0'
 
@@ -80,6 +81,7 @@ class Client:
         self._cluster_id = cluster_id
         self._client_id = client_id
         self._loop = loop
+        self._connect_timeout = connect_timeout
 
         if nats is not None:
             self._nc = nats
@@ -115,16 +117,28 @@ class Client:
         creq.heartbeatInbox = self._hb_inbox
         payload = creq.SerializeToString()
 
-        msg = await self._nc.timed_request(
-            self._discover_subject,
-            payload,
-            self._connect_timeout,
-            )
+        msg = None
+        try:
+            msg = await self._nc.timed_request(
+                self._discover_subject,
+                payload,
+                timeout=self._connect_timeout,
+                )
+        except:
+            await self._close()
+            raise ErrConnectReqTimeout("stan: failed connecting to '{}'".format(cluster_id))
 
         # We should get the NATS Streaming subject from the
         # response from the ConnectRequest.
         resp = stan.pb.protocol.ConnectResponse()
         resp.ParseFromString(msg.data)
+        if resp.error != "":
+            try:
+                await self._close()
+            except:
+                pass
+            raise StanError("stan:" + resp.error)
+
         self._pub_prefix = resp.pubPrefix
         self._sub_req_subject = resp.subRequests
         self._unsub_req_subject = resp.unsubRequests
@@ -377,22 +391,10 @@ class Client:
 
         return sub
 
-    async def close(self):
+    async def _close(self):
         """
-        Close terminates a session with NATS Streaming.
+        Removes any present internal state from the client.
         """
-        req = stan.pb.protocol.CloseRequest()
-        req.clientID = self._client_id
-        msg = await self._nc.timed_request(
-            self._close_req_subject,
-            req.SerializeToString(),
-            self._connect_timeout,
-            )
-        resp = stan.pb.protocol.CloseResponse()
-        resp.ParseFromString(msg.data)
-
-        # TODO: check error in the close response
-        # TODO: close connection if it was borrowed
 
         # Remove the core NATS Streaming subscriptions.
         try:
@@ -415,7 +417,27 @@ class Client:
                 await self._nc.unsubscribe(sub.sid)
             except:
                 continue
-        self._sub_map = None
+        self._sub_map = {}
+
+    async def close(self):
+        """
+        Close terminates a session with NATS Streaming.
+        """
+        req = stan.pb.protocol.CloseRequest()
+        req.clientID = self._client_id
+        msg = await self._nc.timed_request(
+            self._close_req_subject,
+            req.SerializeToString(),
+            self._connect_timeout,
+            )
+        resp = stan.pb.protocol.CloseResponse()
+        resp.ParseFromString(msg.data)
+
+        # TODO: check error in the close response
+        # TODO: close connection if it was borrowed
+
+        # Remove the core NATS Streaming subscriptions.
+        await self._close()
 
 class Subscription(object):
 
