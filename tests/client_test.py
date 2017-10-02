@@ -45,13 +45,50 @@ class ClientTest(SingleServerTestCase):
         # Publish a some messages
         packs = []
 
-        for i in range(0, 10):
+        for i in range(0, 1024):
             pack = await sc.publish("hi", b'hello')
             packs.append(pack)
             self.assertTrue(len(pack.guid) > 0)
             self.assertEqual(pack.error, "")
 
-        self.assertEqual(len(packs), 10)
+        self.assertEqual(len(packs), 1024)
+
+        # Check that we have cleaned up the pub ack map
+        self.assertEqual(len(sc._pub_ack_map), 0)
+        await sc.close()
+        await nc.close()
+        self.assertFalse(nc.is_connected)
+
+    @async_test
+    async def test_async_publish_and_acks(self):
+        nc = NATS()
+        await nc.connect(io_loop=self.loop)
+
+        sc = STAN()
+        await sc.connect("test-cluster", generate_client_id(), nats=nc)
+
+        future = asyncio.Future(loop=self.loop)
+        packs = []
+
+        # It will be receiving the ack which we will be controlling manually,
+        # instead of using the auto ack functionality.
+        async def cb(ack):
+            nonlocal packs
+            nonlocal future
+            packs.append(ack)
+            if len(packs) == 1024:
+                future.set_result(True)
+
+        for i in range(0, 1024):
+            await sc.publish("hi", b'hello', ack_handler=cb)
+
+        try:
+            await asyncio.wait_for(future, 2, loop=self.loop)
+        except:
+            pass
+
+        # Expect to have received all messages already by now.
+        self.assertEqual(len(packs), 1024)
 
         # Check that we have cleaned up the pub ack map
         self.assertEqual(len(sc._pub_ack_map), 0)
@@ -246,7 +283,10 @@ class ClientTest(SingleServerTestCase):
 
         # Should have removed acks and HBs subscriptions.
         self.assertEqual(len(nc._subs), 0)
-        self.assertEqual()
+        self.assertEqual(sc._hb_inbox, None)
+        self.assertEqual(sc._hb_inbox_sid, None)
+        self.assertEqual(sc._ack_subject, None)
+        self.assertEqual(sc._ack_subject_sid, None)
 
         await nc.close()
         self.assertFalse(nc.is_connected)

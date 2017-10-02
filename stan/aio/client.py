@@ -142,14 +142,16 @@ class Client:
 
         # TODO: Unblock pending acks queue
         # TODO: Benchmarking tools
-        # TODO: Check for protocol error
 
         try:
-            future = self._pub_ack_map[pub_ack.guid]
-            future.set_result(pub_ack)
+            cb = self._pub_ack_map[pub_ack.guid]
+            await cb(pub_ack)
             del self._pub_ack_map[pub_ack.guid]
         except KeyError:
             # Just skip the pub ack
+            return
+        except:
+            # TODO: Check for protocol error
             return
 
     async def _process_msg(self, sub):
@@ -217,26 +219,40 @@ class Client:
         pe.data = payload
 
         # Process asynchronously if a handler is given.
-        if ack_handler is None:
-            pass
+        if ack_handler is not None:
+            self._pub_ack_map[guid] = ack_handler
 
-        # Synchronous wait for ack handling.
-        future = asyncio.Future(loop=self._loop)
-        self._pub_ack_map[guid] = future
+            try:
+                await self._nc.publish_request(
+                    stan_subject,
+                    self._ack_subject,
+                    pe.SerializeToString(),
+                    )
+                return
+            except Exception as e:
+                del self._pub_ack_map[guid]
+                raise e
+        else:
+            # Synchronous wait for ack handling.
+            future = asyncio.Future(loop=self._loop)
+            async def cb(pub_ack):
+                nonlocal future
+                future.set_result(pub_ack)
+            self._pub_ack_map[guid] = cb
 
-        try:
-            await self._nc.publish_request(
-                stan_subject,
-                self._ack_subject,
-                pe.SerializeToString(),
-                )
-            await asyncio.wait_for(future, ack_wait, loop=self._loop)
-            return future.result()
-        except Exception as e:
-            # Remove pending future before raising error.
-            future.cancel()
-            del self._pub_ack_map[guid]
-            raise e
+            try:
+                await self._nc.publish_request(
+                    stan_subject,
+                    self._ack_subject,
+                    pe.SerializeToString(),
+                    )
+                await asyncio.wait_for(future, ack_wait, loop=self._loop)
+                return future.result()
+            except Exception as e:
+                # Remove pending future before raising error.
+                future.cancel()
+                del self._pub_ack_map[guid]
+                raise e
 
     async def subscribe(self, subject,
                         cb=None,
