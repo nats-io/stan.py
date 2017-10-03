@@ -137,7 +137,7 @@ class Client:
                 await self._close()
             except:
                 pass
-            raise StanError("stan:" + resp.error)
+            raise StanError(resp.error)
 
         self._pub_prefix = resp.pubPrefix
         self._sub_req_subject = resp.subRequests
