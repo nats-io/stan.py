@@ -6,6 +6,7 @@ from stan.aio.client import Client as STAN
 from stan.aio.errors import *
 
 import sys
+import nats
 import unittest
 from tests.utils import async_test, generate_client_id, start_nats_streaming, \
      StanTestCase, SingleServerTestCase
@@ -468,6 +469,70 @@ class ClientTest(SingleServerTestCase):
 
         await nc.close()
         self.assertFalse(nc.is_connected)
+
+    @async_test
+    async def test_reconnect_without_graceful_close(self):
+        client_id = generate_client_id()
+
+        with (await nats.connect(io_loop=self.loop)) as nc:
+            sc = STAN()
+            await sc.connect("test-cluster", client_id, nats=nc)
+
+        with (await nats.connect(io_loop=self.loop)) as nc:
+            # Will timeout as NATS Streaming server considers it
+            # continue to be connected...
+            with self.assertRaises(ErrConnectReqTimeout):
+                sc = STAN()
+                await sc.connect("test-cluster", client_id, nats=nc, connect_timeout=0.25)
+
+        with (await nats.connect(io_loop=self.loop)) as nc:
+            # Will timeout as NATS Streaming server considers it
+            # continue to be connected since too soon...
+            with self.assertRaises(StanError):
+                sc = STAN()
+                await sc.connect("test-cluster", client_id, nats=nc, connect_timeout=1)
+
+        # If we space out the reconnects then the server will stop
+        # detecting the previous instances of the client.
+        await asyncio.sleep(1, loop=self.loop)
+        with (await nats.connect(io_loop=self.loop)) as nc:
+            # Will timeout as NATS Streaming server considers it
+            # continue to be connected...
+            with self.assertRaises(ErrConnectReqTimeout):
+                sc = STAN()
+                await sc.connect("test-cluster", client_id, nats=nc, connect_timeout=0.25)
+
+        await asyncio.sleep(1, loop=self.loop)
+        with (await nats.connect(io_loop=self.loop)) as nc:
+            # Will not timeout as NATS Streaming server considers it
+            # continue to be connected...
+            sc = STAN()
+            await sc.connect("test-cluster", client_id, nats=nc, connect_timeout=1)
+
+            # Publish a some messages
+            msgs = []
+            future = asyncio.Future(loop=self.loop)
+
+            async def cb(msg):
+                nonlocal msgs
+                msgs.append(msg)
+                if len(msgs) == 10:
+                    future.set_result(True)
+
+            # Start a subscription and wait to receive all the messages
+            # which have been sent so far.
+            sub = await sc.subscribe("hi", cb=cb)
+
+            for i in range(0, 10):
+                await sc.publish("hi", b'hello')
+
+            try:
+                asyncio.wait_for(future, 2, loop=self.loop)
+            except:
+                pass
+
+            self.assertEqual(len(msgs), 10)
+            await sc.close()
 
 if __name__ == '__main__':
     runner = unittest.TextTestRunner(stream=sys.stdout)
