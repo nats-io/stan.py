@@ -439,8 +439,8 @@ class Client:
         resp = stan.pb.protocol.CloseResponse()
         resp.ParseFromString(msg.data)
 
-        # TODO: check error in the close response
-        # TODO: close connection if it was borrowed
+        if resp.error != "":
+            raise StanError(resp.error)
 
         # Remove the core NATS Streaming subscriptions.
         await self._close()
@@ -502,8 +502,41 @@ class Subscription(object):
         resp = stan.pb.protocol.SubscriptionResponse()
         resp.ParseFromString(msg.data)
 
-        # TODO: handling on unsubscribe errors
-        # resp.error...
+        if resp.error != "":
+            raise StanError(resp.error)
+
+    async def close(self):
+        """
+        Wrap up 
+        """
+        await self._nc.unsubscribe(self.sid)
+
+        try:
+            # Stop the processing task for the subscription.
+            sub = self._sc._sub_map[self.inbox]
+            sub._msgs_task.cancel()
+            del self._sc._sub_map[self.inbox]
+        except KeyError:
+            pass
+
+        req = stan.pb.protocol.UnsubscribeRequest()
+        req.clientID = self._sc._client_id
+        req.subject = self.subject
+        req.inbox = self.ack_inbox
+
+        if self.durable_name is not None:
+            req.durableName = self.durable_name
+
+        msg = await self._nc.timed_request(
+            self._sc._sub_close_req_subject,
+            req.SerializeToString(),
+            self._sc._connect_timeout,
+            )
+        resp = stan.pb.protocol.SubscriptionResponse()
+        resp.ParseFromString(msg.data)
+
+        if resp.error != "":
+            raise StanError(resp.error)
 
 class Msg(object):
 

@@ -33,6 +33,9 @@ class ClientTest(SingleServerTestCase):
         await sc.close()
         self.assertTrue(nc.is_connected)
 
+        with self.assertRaises(StanError):
+            await sc.close()
+
         await nc.close()
         self.assertFalse(nc.is_connected)
 
@@ -534,7 +537,7 @@ class ClientTest(SingleServerTestCase):
             self.assertEqual(len(msgs), 10)
             await sc.close()
 
-class StartAtLastReceivedTest(SingleServerTestCase):
+class SubscriptionsTest(SingleServerTestCase):
 
     @async_test
     async def test_subscribe_start_at_last_received(self):
@@ -620,7 +623,77 @@ class StartAtLastReceivedTest(SingleServerTestCase):
             self.assertEqual(len(msgs), 14)
             self.assertEqual(len(qmsgs), 5)
             self.assertEqual(len(ndmsgs), 5)
-            self.assertEqual(len(pmsgs), 19) # Initial 5 + (Initial 5 + New 15)
+            self.assertEqual(len(pmsgs), 19) # Initial 5 + (Initial 5 + New 14)
+
+            await sc.close()
+
+    @async_test
+    async def test_close_durable_subscriptions(self):
+
+        msgs   = [] # Durable subscriptions
+        qmsgs  = [] # Durable queue subscription
+        ndmsgs = [] # Non durable queue subscription
+        pmsgs  = [] # Plain subscriptions
+
+        # Durable subscription
+        async def cb_foo_quux(msg):
+            nonlocal msgs
+            msgs.append(msg)
+
+        # Durable queue subscription can coexist with regular subscription
+        async def cb_foo_bar_quux(msg):
+            nonlocal msgs
+            qmsgs.append(msg)
+
+        # Queue subscription
+        async def cb_foo_bar(msg):
+            nonlocal ndmsgs
+            ndmsgs.append(msg)
+
+        # Plain subscription
+        async def cb_foo(msg):
+            nonlocal pmsgs
+            pmsgs.append(msg)
+
+        client_id = generate_client_id()
+        with (await nats.connect(io_loop=self.loop)) as nc:
+            sc = STAN()
+            await sc.connect("test-cluster", client_id, nats=nc)
+
+            sub_foo_quux = await sc.subscribe(
+                "foo", durable_name="quux", cb=cb_foo_quux)
+
+            sub_foo_bar_quux = await sc.subscribe(
+                "foo", queue="bar", durable_name="quux", cb=cb_foo_bar_quux)
+
+            sub_foo_bar = await sc.subscribe(
+                "foo", queue="bar", cb=cb_foo_bar)
+
+            sub_foo = await sc.subscribe(
+                "foo", cb=cb_foo)
+
+            for i in range(0, 5):
+                await sc.publish("foo", "hi-{}".format(i).encode())
+
+            l = [msgs, qmsgs, ndmsgs, pmsgs]
+            for m in l:
+                self.assertEqual(len(m), 5)
+
+            subs = [sub_foo_quux, sub_foo_bar_quux, sub_foo_bar, sub_foo]
+            for s in subs:
+                await s.close()
+
+            # Should not be receiving more messages...
+            for i in range(6, 10):
+                await sc.publish("foo", "hi-{}".format(i).encode())
+
+            await asyncio.sleep(0.5, loop=self.loop)
+            for m in l:
+                self.assertEqual(len(m), 5)
+
+            # Double close would result in 'stan: invalid subscription'
+            with self.assertRaises(StanError):
+                await sub_foo_quux.close()
 
             await sc.close()
 
