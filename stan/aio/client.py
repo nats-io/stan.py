@@ -369,7 +369,7 @@ class Client:
 
             # TODO: Check that sequence is defined too or error out.
             req.startSequence = sequence
-        elif start_at == 'first' or start_at == 'beginning':
+        elif start_at == 'first':
             req.startPosition = stan.pb.protocol.First
 
         # Set STAN subject and NATS inbox where we will be awaiting
@@ -385,8 +385,14 @@ class Client:
         resp = stan.pb.protocol.SubscriptionResponse()
         resp.ParseFromString(msg.data)
 
-        # TODO: If there is an error here, then rollback the
+        # If there is an error here, then rollback the
         # subscription which we have sent already.
+        if resp.error != "":
+            try:
+                await self._nc.unsubscribe(sid)
+            except:
+                pass
+            raise StanError(resp.error)
         sub.ack_inbox = resp.ackInbox
 
         return sub

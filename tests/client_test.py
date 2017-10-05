@@ -534,6 +534,96 @@ class ClientTest(SingleServerTestCase):
             self.assertEqual(len(msgs), 10)
             await sc.close()
 
+class StartAtLastReceivedTest(SingleServerTestCase):
+
+    @async_test
+    async def test_subscribe_start_at_last_received(self):
+
+        msgs   = [] # Durable subscriptions
+        qmsgs  = [] # Durable queue subscription
+        ndmsgs = [] # Non durable queue subscription
+        pmsgs  = [] # Plain subscriptions
+
+        # Durable subscription
+        async def cb_foo_quux(msg):
+            nonlocal msgs
+            msgs.append(msg)
+
+        # Durable queue subscription can coexist with regular subscription
+        async def cb_foo_bar_quux(msg):
+            nonlocal msgs
+            qmsgs.append(msg)
+
+        # Queue subscription
+        async def cb_foo_bar(msg):
+            nonlocal ndmsgs
+            ndmsgs.append(msg)
+
+        # Plain subscription
+        async def cb_foo(msg):
+            nonlocal pmsgs
+            pmsgs.append(msg)
+
+        client_id = generate_client_id()
+        with (await nats.connect(io_loop=self.loop)) as nc:
+            sc = STAN()
+            await sc.connect("test-cluster", client_id, nats=nc)
+
+            sub_foo_quux = await sc.subscribe(
+                "foo", durable_name="quux", cb=cb_foo_quux)
+
+            sub_foo_bar_quux = await sc.subscribe(
+                "foo", queue="bar", durable_name="quux", cb=cb_foo_bar_quux)
+
+            sub_foo_bar = await sc.subscribe(
+                "foo", queue="bar", cb=cb_foo_bar)
+
+            sub_foo = await sc.subscribe(
+                "foo", cb=cb_foo)
+
+            for i in range(0, 5):
+                await sc.publish("foo", "hi-{}".format(i).encode())
+
+            l = [msgs, qmsgs, ndmsgs, pmsgs]
+            for m in l:
+                self.assertEqual(len(m), 5)
+
+            await sc.close()
+
+        await asyncio.sleep(1, loop=self.loop)
+        with (await nats.connect(io_loop=self.loop)) as nc:
+            sc = STAN()
+            await sc.connect("test-cluster", client_id, nats=nc, connect_timeout=10)
+
+            for i in range(5, 10):
+                await sc.publish("foo", "hi-{}".format(i).encode())
+
+            sub_foo_quux = await sc.subscribe(
+                "foo", durable_name="quux", start_at='last_received', cb=cb_foo_quux)
+
+            sub_foo = await sc.subscribe(
+                "foo", start_at="first", cb=cb_foo)
+
+            for i in range(11, 15):
+                await sc.publish("foo", "hi-{}".format(i).encode())
+
+            # We should not be able to create a second durable
+            # on the same subject.
+            before = len(nc._subs)
+            with self.assertRaises(StanError):
+                await sc.subscribe(
+                    "foo", durable_name="quux", cb=cb_foo_quux)
+            after = len(nc._subs)
+            self.assertEqual(before, after)
+
+            await asyncio.sleep(1, loop=self.loop)
+            self.assertEqual(len(msgs), 14)
+            self.assertEqual(len(qmsgs), 5)
+            self.assertEqual(len(ndmsgs), 5)
+            self.assertEqual(len(pmsgs), 19) # Initial 5 + (Initial 5 + New 15)
+
+            await sc.close()
+
 if __name__ == '__main__':
     runner = unittest.TextTestRunner(stream=sys.stdout)
     unittest.main(verbosity=2, exit=False, testRunner=runner)
