@@ -429,6 +429,10 @@ class Client:
         """
         Close terminates a session with NATS Streaming.
         """
+
+        # Remove the core NATS Streaming subscriptions.
+        await self._close()
+        
         req = stan.pb.protocol.CloseRequest()
         req.clientID = self._client_id
         msg = await self._nc.timed_request(
@@ -441,9 +445,6 @@ class Client:
 
         if resp.error != "":
             raise StanError(resp.error)
-
-        # Remove the core NATS Streaming subscriptions.
-        await self._close()
 
 class Subscription(object):
 

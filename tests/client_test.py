@@ -458,10 +458,16 @@ class ClientTest(SingleServerTestCase):
             m = msgs[i]
             self.assertEqual(m.sequence, i+1)
 
+        # Need to cleanup STAN session before wrapping up NATS conn.
+        await sc_2.close()
+
+        # It will fail because original client has gone away
+        # and removed this ID from the cluster.
+        with self.assertRaises(StanError):
+            await sc.close()
+
         scs = [sc, sc_2]
         for s in scs:
-            # Need to cleanup STAN session before wrapping up NATS conn.
-            await s.close()
             self.assertEqual(s._hb_inbox, None)
             self.assertEqual(s._hb_inbox_sid, None)
             self.assertEqual(s._ack_subject, None)
@@ -696,6 +702,66 @@ class SubscriptionsTest(SingleServerTestCase):
                 await sub_foo_quux.close()
 
             await sc.close()
+
+    @async_test
+    async def test_distribute_queue_messages(self):
+        clients = {}
+
+        class Component:
+            def __init__(self, nc, sc):
+                self.nc = nc
+                self.sc = sc
+                self.msgs = []
+
+            async def cb(self, msg):
+                self.msgs.append(msg)
+
+        # A...E
+        for letter in range(ord('A'), ord('F')):
+            nc = NATS()
+            sc = STAN()
+
+            client_id = "{}-{}".format(generate_client_id(), chr(letter))
+            await nc.connect(name=client_id, io_loop=self.loop)
+            await sc.connect("test-cluster", client_id, nats=nc)
+            clients[client_id] = Component(nc, sc)
+
+        for (client_id, c) in clients.items():
+            # Messages will be distributed among these subscribers.
+            await c.sc.subscribe("tasks", queue="group", cb=c.cb)
+
+        # Get the first client to publish some messages
+        acks = []
+        future = asyncio.Future(loop=self.loop)
+        async def ack_handler(ack):
+            nonlocal acks
+            acks.append(ack)
+            # Check if all messages have been published already.
+            if len(acks) >= 2048:
+                future.set_result(True)
+
+        pc = list(clients.values())[-1]
+        for i in range(0, 2048):
+            await pc.sc.publish(
+                "tasks", "task-{}".format(i).encode(), ack_handler=ack_handler)
+
+        try:
+            # Removing the wait here causes the loop to eventually
+            # stop receiving messages...
+            await asyncio.wait_for(future, 2, loop=self.loop)
+        except:
+            pass
+
+        total = 0
+        for (client_id, c) in clients.items():
+            # Not perfect but all should have had around
+            # enough messages...
+            self.assertTrue(len(c.msgs) > 400)
+
+            total += len(c.msgs)
+            await c.sc.close()
+            await c.nc.close()
+        self.assertEqual(total, 2048)
 
 if __name__ == '__main__':
     runner = unittest.TextTestRunner(stream=sys.stdout)
