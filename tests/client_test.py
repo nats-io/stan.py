@@ -914,6 +914,97 @@ class SubscriptionsTest(SingleServerTestCase):
 
             await sc.close()
 
+    @async_test
+    async def test_subscribe_with_manual_acks_missing(self):
+
+        pmsgs  = [] # Plain subscription messages
+
+        client_id = generate_client_id()
+        with (await nats.connect(io_loop=self.loop)) as nc:
+            sc = STAN()
+            await sc.connect("test-cluster", client_id, nats=nc)
+
+            # Stagger sending messages and then only retrieve based on timestamp
+            for i in range(0, 100):
+                await sc.publish("foo", "hi-{}".format(i).encode())
+
+            async def cb_foo(msg):
+                nonlocal pmsgs
+                nonlocal sc
+                pmsgs.append(msg)
+
+            sub_foo = await sc.subscribe(
+                "foo", deliver_all_available=True, manual_acks=True, max_inflight=1, cb=cb_foo)
+
+            # Should try to receive all the messages now
+            await asyncio.sleep(1, loop=self.loop)
+
+            # Only get one since not acking back
+            self.assertEqual(len(pmsgs), 1)
+
+            await sc.close()
+
+    @async_test
+    async def test_subscribe_with_manual_acks(self):
+
+        pmsgs  = [] # Plain subscription messages
+
+        client_id = generate_client_id()
+        with (await nats.connect(io_loop=self.loop)) as nc:
+            sc = STAN()
+            await sc.connect("test-cluster", client_id, nats=nc)
+
+            # Stagger sending messages and then only retrieve based on timestamp
+            for i in range(0, 100):
+                await sc.publish("foo", "hi-{}".format(i).encode())
+
+            async def cb_foo(msg):
+                nonlocal pmsgs
+                nonlocal sc
+                await sc.ack(msg)
+                pmsgs.append(msg)
+
+            sub_foo = await sc.subscribe(
+                "foo", deliver_all_available=True, manual_acks=True, max_inflight=1, cb=cb_foo)
+
+            # Should try to receive all the messages now
+            await asyncio.sleep(1, loop=self.loop)
+
+            # Only get one since not acking back
+            self.assertEqual(len(pmsgs), 100)
+
+            await sc.close()
+
+    @async_test
+    async def test_subscribe_with_manual_acks_missing_redelivery(self):
+
+        pmsgs  = [] # Plain subscription messages
+
+        client_id = generate_client_id()
+        with (await nats.connect(io_loop=self.loop)) as nc:
+            sc = STAN()
+            await sc.connect("test-cluster", client_id, nats=nc)
+
+            # Stagger sending messages and then only retrieve based on timestamp
+            for i in range(0, 100):
+                await sc.publish("foo", "hi-{}".format(i).encode())
+
+            async def cb_foo(msg):
+                nonlocal pmsgs
+                nonlocal sc
+                pmsgs.append(msg)
+
+            sub_foo = await sc.subscribe(
+                "foo", ack_wait=1, deliver_all_available=True, manual_acks=True, max_inflight=1, cb=cb_foo)
+
+            # Should try to receive all the messages now
+            await asyncio.sleep(2.5, loop=self.loop)
+
+            # Only get one since not acking back, will get same message a few times.
+            self.assertEqual(len(pmsgs), 3)
+
+            await sc.close()
+
 if __name__ == '__main__':
     runner = unittest.TextTestRunner(stream=sys.stdout)
     unittest.main(verbosity=2, exit=False, testRunner=runner)

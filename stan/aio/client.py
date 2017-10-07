@@ -329,9 +329,8 @@ class Client:
             )
         self._sub_map[sub.inbox] = sub
 
-        # Have the message processing task ready before making the subscription.
+        # Have the message processing queue ready before making the subscription.
         sub._msgs_queue = asyncio.Queue(maxsize=pending_limits, loop=self._loop)
-        sub._msgs_task = self._loop.create_task(self._process_msg(sub))
 
         # Helper coroutine which will just put messages in to the queue,
         # whenever the NATS client receives a message.
@@ -392,6 +391,7 @@ class Client:
                 pass
             raise StanError(resp.error)
         sub.ack_inbox = resp.ackInbox
+        sub._msgs_task = self._loop.create_task(self._process_msg(sub))
 
         return sub
 
