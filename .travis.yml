@@ -1,0 +1,25 @@
+language: python
+
+cache:
+  directories:
+  - $HOME/gnatsd
+
+python:
+  - 3.4
+  - 3.5.1
+  - 3.6
+
+before_install:
+  - bash ./script/install_gnatsd.sh
+
+before_script:
+  - export PATH=$HOME/nats-server:$PATH
+  
+script:
+  - ./script/test.sh
+
+notifications:
+  email: false
+
+sudo: false
+dist: trusty
