@@ -364,11 +364,8 @@ class Client:
         elif start_at == 'time':
             req.startPosition = stan.pb.protocol.TimeDeltaStart
             req.startTimeDelta = int(now() - time) * 1000000000
-            print(req)
         elif start_at == 'sequence':
             req.startPosition = stan.pb.protocol.SequenceStart
-
-            # TODO: Check that sequence is defined too or error out.
             req.startSequence = sequence
         elif start_at == 'first':
             req.startPosition = stan.pb.protocol.First
