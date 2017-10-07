@@ -3,6 +3,8 @@
 An asyncio-based ([PEP 3156](https://www.python.org/dev/peps/pep-3156/)) Python 3 client for the [NATS Streaming messaging system](http://nats.io/documentation/streaming/nats-streaming-intro/) platform.
 
 [![License MIT](https://img.shields.io/npm/l/express.svg)](http://opensource.org/licenses/MIT)
+[![Build Status](https://travis-ci.org/wallyqs/asyncio-nats-streaming.svg?branch=master)](http://travis-ci.org/wallyqs/asyncio-nats-streaming)
+[![GitHub release](https://img.shields.io/badge/release-v0.1.0-cafe12.svg)](https://github.com/wallyqs/asyncio-nats-streaming/releases/tag/v0.1.0)
 
 ## Supported platforms
 
@@ -94,23 +96,23 @@ will be delivered to the client.
 
 ```python
 # Subscribe with durable name
-await sc.subscribe("foo", durable_name: "bar", cb=cb)
+await sc.subscribe("foo", durable_name="bar", cb=cb)
 
 # Client receives message sequence 1-40
 for i in range(1, 40):
-  await sc2.publish("foo", "hello-{}".format(i))
+  await sc2.publish("foo", "hello-{}".format(i).encode())
 
 # Disconnect from the server and reconnect...
 
 # Messages sequence 41-80 are published...
 for i in range(41, 80):
-  await sc2.publish("foo", "hello-{}".format(i))
+  await sc2.publish("foo", "hello-{}".format(i).encode())
 
 # Client reconnects with same clientID "client-123"
-await sc.connect("test-cluster", "client-123", nats: nc)
+await sc.connect("test-cluster", "client-123", nats=nc)
 
 # Subscribe with same durable name picks up from seq 40
-await sc.subscribe("foo", durable_name: "bar", cb=cb)
+await sc.subscribe("foo", durable_name="bar", cb=cb)
 ```
 
 ### Queue groups
