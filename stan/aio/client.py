@@ -416,7 +416,8 @@ class Client:
 
         # Remove all the related subscriptions
         for _, sub in self._sub_map.items():
-            sub._msgs_task.cancel()
+            if sub._msgs_task is not None:
+                sub._msgs_task.cancel()
             try:
                 await self._nc.unsubscribe(sub.sid)
             except:
@@ -430,7 +431,7 @@ class Client:
 
         # Remove the core NATS Streaming subscriptions.
         await self._close()
-        
+
         req = stan.pb.protocol.CloseRequest()
         req.clientID = self._client_id
         msg = await self._nc.timed_request(
@@ -506,7 +507,7 @@ class Subscription(object):
 
     async def close(self):
         """
-        Wrap up 
+        Closes a NATS streaming subscription.
         """
         await self._nc.unsubscribe(self.sid)
 
