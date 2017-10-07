@@ -7,6 +7,7 @@ from stan.aio.errors import *
 
 import sys
 import nats
+import time
 import unittest
 from tests.utils import async_test, generate_client_id, start_nats_streaming, \
      StanTestCase, SingleServerTestCase
@@ -762,6 +763,81 @@ class SubscriptionsTest(SingleServerTestCase):
             await c.sc.close()
             await c.nc.close()
         self.assertEqual(total, 2048)
+
+    @async_test
+    async def test_subscribe_start_at_timestamp(self):
+
+        msgs   = [] # Durable subscriptions
+        qmsgs  = [] # Durable queue subscription
+        ndmsgs = [] # Non durable queue subscription
+        pmsgs  = [] # Plain subscriptions
+
+        # Durable subscription
+        async def cb_foo_quux(msg):
+            nonlocal msgs
+            msgs.append(msg)
+
+        # Durable queue subscription can coexist with regular subscription
+        async def cb_foo_bar_quux(msg):
+            nonlocal msgs
+            qmsgs.append(msg)
+
+        # Queue subscription
+        async def cb_foo_bar(msg):
+            nonlocal ndmsgs
+            ndmsgs.append(msg)
+
+        # Plain subscription
+        async def cb_foo(msg):
+            nonlocal pmsgs
+            pmsgs.append(msg)
+
+        client_id = generate_client_id()
+        with (await nats.connect(io_loop=self.loop)) as nc:
+            sc = STAN()
+            await sc.connect("test-cluster", client_id, nats=nc)
+
+            # Stagger sending messages and then only retrieve based on timestamp
+            for i in range(0, 5):
+                await sc.publish("foo", "hi-{}".format(i).encode())
+
+            await asyncio.sleep(1, loop=self.loop)
+            for i in range(5, 11):
+                await sc.publish("foo", "hi-{}".format(i).encode())
+
+            await asyncio.sleep(2, loop=self.loop)
+            for i in range(11, 16):
+                await sc.publish("foo", "hi-{}".format(i).encode())
+
+            # Should only get the last 5 messages.
+            sub_foo_quux = await sc.subscribe(
+                "foo", start_at='time', time=time()-1, durable_name="quux", cb=cb_foo_quux)
+            sub_foo = await sc.subscribe(
+                "foo", start_at='time', time=time()-1, cb=cb_foo)
+            sub_foo_bar_quux = await sc.subscribe(
+                "foo", start_at='time', time=time()-1, queue="bar", durable_name="quux", cb=cb_foo_bar_quux)
+            sub_foo_bar = await sc.subscribe(
+                "foo", start_at='time', time=time()-1, queue="bar", cb=cb_foo_bar)
+
+            await asyncio.sleep(1, loop=self.loop)
+            self.assertEqual(len(msgs), 5)
+            self.assertEqual(len(qmsgs), 5)
+            self.assertEqual(len(ndmsgs), 5)
+            self.assertEqual(len(pmsgs), 5)
+
+            # Should receive all the messages now
+            sub_foo_everything = await sc.subscribe(
+                "foo", start_at='time', time=time()-5, cb=cb_foo)
+            await asyncio.sleep(1, loop=self.loop)
+            self.assertEqual(len(pmsgs), 21)
+
+            # Skip the first 5.
+            i = 0
+            for msg in pmsgs[5:]:
+                self.assertEqual(msg.data, "hi-{}".format(i).encode())
+                i += 1
+
+            await sc.close()
 
 if __name__ == '__main__':
     runner = unittest.TextTestRunner(stream=sys.stdout)

@@ -4,6 +4,7 @@ import asyncio
 import random
 import stan.pb.protocol
 from stan.aio.errors import *
+from time import time as now
 
 __version__ = '0.1.0'
 
@@ -362,8 +363,8 @@ class Client:
             req.startPosition = stan.pb.protocol.LastReceived
         elif start_at == 'time':
             req.startPosition = stan.pb.protocol.TimeDeltaStart
-            # TODO:
-            # req.startTimeDelta...
+            req.startTimeDelta = int(now() - time) * 1000000000
+            print(req)
         elif start_at == 'sequence':
             req.startPosition = stan.pb.protocol.SequenceStart
 
