@@ -237,9 +237,9 @@ class ClientTest(SingleServerTestCase):
         msgs_a, msgs_b, msgs_c = [], [], []
         async def cb_a(msg):
             nonlocal msgs_a
-            # Will not block the dispatching of messages to other subscriptions.
-            await asyncio.sleep(0.1, loop=self.loop)
             msgs_a.append(msg)
+            # Will not block the dispatching of messages to other subscriptions.
+            await asyncio.sleep(5, loop=self.loop)
 
         async def cb_b(msg):
             nonlocal msgs_b
@@ -283,9 +283,10 @@ class ClientTest(SingleServerTestCase):
 
         # This one was slower at processing the messages,
         # so it should have gotten only a couple.
-        self.assertEqual(len(msgs_a), 2)
-        for i in range(0, 2):
-            m = msgs_a[i]
+        self.assertEqual(len(msgs_a), 1)
+        m = msgs_a[0]
+        self.assertEqual(m.sequence, 1)
+        self.assertEqual(m.data, b'hello-0')
 
         await sc.close()
         await nc.close()

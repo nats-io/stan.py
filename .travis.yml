@@ -2,7 +2,7 @@ language: python
 
 cache:
   directories:
-  - $HOME/gnatsd
+  - $HOME/nats-streaming-server
 
 python:
   - 3.5.1
@@ -12,7 +12,7 @@ before_install:
   - bash ./script/install_gnatsd.sh
 
 before_script:
-  - export PATH=$HOME/nats-server:$PATH
+  - export PATH=$HOME/nats-streaming-server:$PATH
   
 script:
   - ./script/test.sh
