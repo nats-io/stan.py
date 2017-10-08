@@ -2,7 +2,7 @@
 
 import asyncio
 import random
-import stan.pb.protocol
+import stan.pb.protocol_pb2 as protocol
 from stan.aio.errors import *
 from time import time as now
 
@@ -113,7 +113,7 @@ class Client:
         await self._nc.flush()
 
         # Start NATS Streaming session by sending ConnectRequest
-        creq = stan.pb.protocol.ConnectRequest()
+        creq = protocol.ConnectRequest()
         creq.clientID = self._client_id
         creq.heartbeatInbox = self._hb_inbox
         payload = creq.SerializeToString()
@@ -131,7 +131,7 @@ class Client:
 
         # We should get the NATS Streaming subject from the
         # response from the ConnectRequest.
-        resp = stan.pb.protocol.ConnectResponse()
+        resp = protocol.ConnectResponse()
         resp.ParseFromString(msg.data)
         if resp.error != "":
             try:
@@ -156,7 +156,7 @@ class Client:
         """
         Receives acks from the publishes via the _STAN.acks subscription.
         """
-        pub_ack = stan.pb.protocol.PubAck()
+        pub_ack = protocol.PubAck()
         pub_ack.ParseFromString(msg.data)
 
         # Unblock pending acks queue if required.
@@ -184,7 +184,7 @@ class Client:
             try:
                 raw_msg = await sub._msgs_queue.get()
                 msg = Msg()
-                msg_proto = stan.pb.protocol.MsgProto()
+                msg_proto = protocol.MsgProto()
                 msg_proto.ParseFromString(raw_msg.data)
                 msg.proto = msg_proto
                 msg.sub = sub
@@ -195,7 +195,7 @@ class Client:
                 if not sub.manual_acks:
                     # Process auto-ack if not done manually in the callback,
                     # by publishing into the ack inbox from the subscription.
-                    msg_ack = stan.pb.protocol.Ack()
+                    msg_ack = protocol.Ack()
                     msg_ack.subject = msg.proto.subject
                     msg_ack.sequence = msg.proto.sequence
                     await self._nc.publish(sub.ack_inbox, msg_ack.SerializeToString())
@@ -211,7 +211,7 @@ class Client:
 
         :param msg: Message which is pending to be acked by client.
         """
-        ack_proto = stan.pb.protocol.Ack()
+        ack_proto = protocol.Ack()
         ack_proto.subject = msg.proto.subject
         ack_proto.sequence = msg.proto.sequence
         await self._nc.publish(msg.sub.ack_inbox, ack_proto.SerializeToString())
@@ -232,7 +232,7 @@ class Client:
         """
         stan_subject = ''.join([self._pub_prefix, '.', subject])
         guid = new_guid()
-        pe = stan.pb.protocol.PubMsg()
+        pe = protocol.PubMsg()
         pe.clientID = self._client_id
         pe.guid = guid
         pe.subject = subject
@@ -342,7 +342,7 @@ class Client:
         sid = await self._nc.subscribe(sub.inbox, cb=cb)
         sub.sid = sid
 
-        req = stan.pb.protocol.SubscriptionRequest()
+        req = protocol.SubscriptionRequest()
         req.clientID = self._client_id
         req.maxInFlight = max_inflight
         req.ackWaitInSecs = ack_wait
@@ -355,19 +355,19 @@ class Client:
 
         # Normalize start position options.
         if deliver_all_available:
-            req.startPosition = stan.pb.protocol.First
+            req.startPosition = protocol.First
         elif start_at is None or start_at == 'new_only':
-            req.startPosition = stan.pb.protocol.NewOnly
+            req.startPosition = protocol.NewOnly
         elif start_at == 'last_received':
-            req.startPosition = stan.pb.protocol.LastReceived
+            req.startPosition = protocol.LastReceived
         elif start_at == 'time':
-            req.startPosition = stan.pb.protocol.TimeDeltaStart
+            req.startPosition = protocol.TimeDeltaStart
             req.startTimeDelta = int(now() - time) * 1000000000
         elif start_at == 'sequence':
-            req.startPosition = stan.pb.protocol.SequenceStart
+            req.startPosition = protocol.SequenceStart
             req.startSequence = sequence
         elif start_at == 'first':
-            req.startPosition = stan.pb.protocol.First
+            req.startPosition = protocol.First
 
         # Set STAN subject and NATS inbox where we will be awaiting
         # for the messages to be delivered.
@@ -379,7 +379,7 @@ class Client:
             req.SerializeToString(),
             self._connect_timeout,
             )
-        resp = stan.pb.protocol.SubscriptionResponse()
+        resp = protocol.SubscriptionResponse()
         resp.ParseFromString(msg.data)
 
         # If there is an error here, then rollback the
@@ -432,14 +432,14 @@ class Client:
         # Remove the core NATS Streaming subscriptions.
         await self._close()
 
-        req = stan.pb.protocol.CloseRequest()
+        req = protocol.CloseRequest()
         req.clientID = self._client_id
         msg = await self._nc.timed_request(
             self._close_req_subject,
             req.SerializeToString(),
             self._connect_timeout,
             )
-        resp = stan.pb.protocol.CloseResponse()
+        resp = protocol.CloseResponse()
         resp.ParseFromString(msg.data)
 
         if resp.error != "":
@@ -486,7 +486,7 @@ class Subscription(object):
         except KeyError:
             pass
 
-        req = stan.pb.protocol.UnsubscribeRequest()
+        req = protocol.UnsubscribeRequest()
         req.clientID = self._sc._client_id
         req.subject = self.subject
         req.inbox = self.ack_inbox
@@ -499,7 +499,7 @@ class Subscription(object):
             req.SerializeToString(),
             self._sc._connect_timeout,
             )
-        resp = stan.pb.protocol.SubscriptionResponse()
+        resp = protocol.SubscriptionResponse()
         resp.ParseFromString(msg.data)
 
         if resp.error != "":
@@ -519,7 +519,7 @@ class Subscription(object):
         except KeyError:
             pass
 
-        req = stan.pb.protocol.UnsubscribeRequest()
+        req = protocol.UnsubscribeRequest()
         req.clientID = self._sc._client_id
         req.subject = self.subject
         req.inbox = self.ack_inbox
@@ -532,7 +532,7 @@ class Subscription(object):
             req.SerializeToString(),
             self._sc._connect_timeout,
             )
-        resp = stan.pb.protocol.SubscriptionResponse()
+        resp = protocol.SubscriptionResponse()
         resp.ParseFromString(msg.data)
 
         if resp.error != "":
