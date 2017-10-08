@@ -1,16 +1,15 @@
 
-- [ ] Connect to start session
-- [ ] Publish
-- [ ] Close
-- [ ] Subscribe + Options
+- [X] Connect to start session
+- [X] Publish
+- [X] Close
+- [X] Subscribe + Options
   + [ ] NextMsg for when not using a callback?
-  + [ ] Durable Subscriptions
-  + [ ] Manual acks functionality
-- [ ] Unsubscribe
-- [ ] Async Publish
-  + [ ] Pending pub acks sized queue
+  + [X] Durable Subscriptions
+  + [X] Manual acks functionality
+- [X] Unsubscribe
+- [X] Async Publish
+  + [X] Pending pub acks sized queue
 - [ ] Non-borrowed connection
-- [ ] Tests
+- [X] Tests
 - [ ] Examples
-- [ ] Travis build
-
+- [X] Travis build
