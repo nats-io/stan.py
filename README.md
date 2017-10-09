@@ -71,19 +71,19 @@ async def cb(msg):
   print("Received a message (seq={}): {}".format(msg.seq, msg.data))
 
 # Subscribe starting with most recently published value
-await sc.subscribe("foo", start_at="last_received")
+await sc.subscribe("foo", start_at="last_received", cb=cb)
 
 # Receive all stored values in order
-await sc.subscribe("foo", deliver_all_available=True)
+await sc.subscribe("foo", deliver_all_available=True, cb=cb)
 
 # Receive messages starting at a specific sequence number
-await sc.subscribe("foo", start_at="sequence", sequence=3)
+await sc.subscribe("foo", start_at="sequence", sequence=3, cb=cb)
 
 # Subscribe starting at a specific time by giving a time delta
 # with an optional nanoseconds fraction.
 # e.g. messages in the last 2 minutes
 from time import time
-await sc.subscribe("foo", start_at='time', time=time()-120)
+await sc.subscribe("foo", start_at='time', time=time()-120, cb=cb)
 ```
 
 ### Durable subscriptions
