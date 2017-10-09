@@ -79,8 +79,11 @@ await sc.subscribe("foo", deliver_all_available=True)
 # Receive messages starting at a specific sequence number
 await sc.subscribe("foo", start_at="sequence", sequence=3)
 
-# Subscribe starting at a specific time by giving a unix timestamp
-# with an optional nanoseconds fraction
+# Subscribe starting at a specific time by giving a time delta
+# with an optional nanoseconds fraction.
+# e.g. messages in the last 2 minutes
+from time import time
+await sc.subscribe("foo", start_at='time', time=time()-120)
 ```
 
 ### Durable subscriptions
