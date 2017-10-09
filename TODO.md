@@ -11,5 +11,5 @@
   + [X] Pending pub acks sized queue
 - [ ] Non-borrowed connection
 - [X] Tests
-- [ ] Examples
+- [X] Examples
 - [X] Travis build
