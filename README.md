@@ -312,8 +312,6 @@ reached, further `publish` calls will block until the number of
 unacknowledged messages falls below the specified limit.
 
 ```python
-# Copyright 2017 Apcera Inc. All rights reserved.
-
 import asyncio
 from nats.aio.client import Client as NATS
 from stan.aio.client import Client as STAN
