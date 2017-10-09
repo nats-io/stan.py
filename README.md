@@ -8,7 +8,7 @@ An asyncio-based ([PEP 3156](https://www.python.org/dev/peps/pep-3156/)) Python 
 
 ## Supported platforms
 
-Should be compatible with at least [Python +3.6](https://docs.python.org/3.6/library/asyncio.html).
+Should be compatible with at least [Python +3.5](https://docs.python.org/3.5/library/asyncio.html).
 
 ## Getting Started
 
@@ -131,6 +131,52 @@ is created. If the group already exists, the member is added to the
 group.
 
 ```python
+import asyncio
+from nats.aio.client import Client as NATS
+from stan.aio.client import Client as STAN
+
+async def run(loop):
+    nc1 = NATS()
+    sc1 = STAN()
+    await nc1.connect(io_loop=loop)
+    await sc1.connect("test-cluster", "client-1", nats=nc1)
+
+    nc2 = NATS()
+    sc2 = STAN()
+    await nc2.connect(io_loop=loop)
+    await sc2.connect("test-cluster", "client-2", nats=nc2)
+
+    nc3 = NATS()
+    sc3 = STAN()
+    await nc3.connect(io_loop=loop)
+    await sc3.connect("test-cluster", "client-3", nats=nc3)
+
+    group = [sc1, sc2, sc3]
+
+    for sc in group:
+        async def queue_cb(msg):
+            print("[{}] Received a message on queue subscription: {}".format(msg.sequence, msg.data))
+
+        async def regular_cb(msg):
+            print("[{}] Received a message on a regular subscription: {}".format(msg.sequence, msg.data))
+
+        # Subscribe to queue group named 'bar'
+        await sc.subscribe("foo", queue="bar", cb=queue_cb)
+
+        # Notice that you can have a regular subscriber on that subject too
+        await sc.subscribe("foo", cb=regular_cb)
+
+    # Clients receives message sequence 1-40 on regular subscription and
+    # messages become balanced too on the queue group subscription
+    for i in range(0, 40):
+        await sc.publish("foo", 'hello-{}'.format(i).encode())
+
+    # When the last member leaves the group, that queue group is removed
+    for sc in group:
+        await sc.close()
+    await nc1.close()
+    await nc2.close()
+    await nc3.close()
 ```
 
 ### Durable Queue Group
@@ -146,6 +192,9 @@ standard queue group, except the `durable_name` option must be used to
 specify durability.
 
 ```python
+async def cb(msg):
+   print("[{}] Received a message on durable queue subscription: {}".format(msg.sequence, msg.data))
+   
 # Subscribe to queue group named 'bar'
 await sc.subscribe("foo", queue="bar", durable_name="durable", cb=cb)
 ```
@@ -169,6 +218,32 @@ individual acknowledgements during the publish operation, this can
 be enabled by passing a block to `publish`:
 
 ```python
+import asyncio
+from nats.aio.client import Client as NATS
+from stan.aio.client import Client as STAN
+
+async def run(loop):
+    nc = NATS()
+    sc = STAN()
+    await nc.connect(io_loop=loop)
+    await sc.connect("test-cluster", "client-123", nats=nc)
+
+    async def ack_handler(ack):
+        print("Received ack: {}".format(ack.guid))
+
+    # Publish asynchronously by using an ack_handler which
+    # will be passed the status of the publish.
+    for i in range(0, 1024):
+        await sc.publish("foo", b'hello-world', ack_handler=ack_handler)
+
+    async def cb(msg):
+        print("Received a message on subscription (seq: {}): {}".format(msg.sequence, msg.data))
+
+    await sc.subscribe("foo", start_at='first', cb=cb)
+    await asyncio.sleep(1, loop=loop)
+
+    await sc.close()
+    await nc.close()
 ```
 
 ### Message Acknowledgements and Redelivery
@@ -189,6 +264,31 @@ this, the client must set manual acknowledgement mode on the
 subscription, and invoke `ack` on the received message:
 
 ```python
+async def run(loop):
+    nc = NATS()
+    sc = STAN()
+    await nc.connect(io_loop=loop)
+    await sc.connect("test-cluster", "client-123", nats=nc)
+
+    async def ack_handler(ack):
+        print("Received ack: {}".format(ack.guid))
+    for i in range(0, 10):
+        await sc.publish("foo", b'hello-world', ack_handler=ack_handler)
+
+    async def cb(msg):
+        nonlocal sc
+        print("Received a message on subscription (seq: {}): {}".format(msg.sequence, msg.data))
+        await sc.ack(msg)
+
+    # Use manual acking and have message redelivery be done
+    # if we do not ack back in 1 second.
+    await sc.subscribe("foo", start_at='first', cb=cb, manual_acks=True, ack_wait=1)
+
+    for i in range(0, 5):
+        await asyncio.sleep(1, loop=loop)
+
+    await sc.close()
+    await nc.close()
 ```
 
 ## Rate limiting/matching
@@ -209,6 +309,53 @@ reached, further `publish` calls will block until the number of
 unacknowledged messages falls below the specified limit.
 
 ```python
+# Copyright 2017 Apcera Inc. All rights reserved.
+
+import asyncio
+from nats.aio.client import Client as NATS
+from stan.aio.client import Client as STAN
+
+import time
+
+async def run(loop):
+    nc = NATS()
+    sc = STAN()
+    await nc.connect(io_loop=loop)
+    await sc.connect("test-cluster", "client-123", max_pub_acks_inflight=512, nats=nc)
+
+    acks = []
+    msgs = []
+    async def cb(msg):
+        nonlocal sc
+        print("Received a message on subscription (seq: {} | recv: {}): {}".format(msg.sequence, len(msgs), msg.data))
+        msgs.append(msg)
+        await sc.ack(msg)
+
+    # Use manual acking and have message redelivery be done
+    # if we do not ack back in 1 second.
+    await sc.subscribe("foo", start_at='first', cb=cb, manual_acks=True, ack_wait=1)
+
+    async def ack_handler(ack):
+        nonlocal acks
+        acks.append(ack)
+        print("Received ack: {} | recv: {}".format(ack.guid, len(acks)))
+
+    for i in range(0, 2048):
+        before = time.time()
+        await sc.publish("foo", b'hello-world', ack_handler=ack_handler)
+        after = time.time()
+        lag = after-before
+
+        # Async publishing will have backpressured applied if too many
+        # published commands are inflight without an ack still.
+        if lag > 0.001:
+            print("lag at {} : {}".format(lag, i))
+
+    for i in range(0, 5):
+        await asyncio.sleep(1, loop=loop)
+
+    await sc.close()
+    await nc.close()
 ```
 
 ### Subscriber rate limiting
@@ -223,6 +370,40 @@ delivery of messages to this subscription until the number of
 unacknowledged messages falls below the specified limit.
 
 ```python
+import asyncio
+from nats.aio.client import Client as NATS
+from stan.aio.client import Client as STAN
+
+async def run(loop):
+    nc = NATS()
+    sc = STAN()
+    await nc.connect(io_loop=loop)
+    await sc.connect("test-cluster", "client-123", max_pub_acks_inflight=512, nats=nc)
+
+    acks = []
+    msgs = []
+    async def cb(msg):
+        nonlocal sc
+        print("Received a message on subscription (seq: {} | recv: {}): {}".format(msg.sequence, len(msgs), msg.data))
+        msgs.append(msg)
+
+        # This will eventually add up causing redelivery to occur.
+        await asyncio.sleep(0.01, loop=loop)
+        await sc.ack(msg)
+
+    # Use manual acking and have message redelivery be done
+    # if we do not ack back in 1 second capping to 128 inflight messages.
+    await sc.subscribe(
+        "foo", start_at='first', cb=cb, max_inflight=128, manual_acks=True, ack_wait=1)
+
+    for i in range(0, 2048):
+        await sc.publish("foo", b'hello-world')
+
+    for i in range(0, 10):
+        await asyncio.sleep(1, loop=loop)
+
+    await sc.close()
+    await nc.close()
 ```
 
 ## License
