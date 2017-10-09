@@ -13,3 +13,4 @@
 - [X] Tests
 - [X] Examples
 - [X] Travis build
+- [X] Pypi release
