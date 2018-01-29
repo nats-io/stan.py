@@ -1,9 +1,17 @@
 from setuptools import setup
-from stan.aio.client import __version__
+import re
+import ast
+
+
+_version_re = re.compile(r'__version__\s+=\s+(.*)')
+
+with open('stan/aio/client.py', 'rb') as f:
+    version = str(ast.literal_eval(_version_re.search(
+        f.read().decode('utf-8')).group(1)))
 
 setup(
     name='asyncio-nats-streaming',
-    version=__version__,
+    version=version,
     description='NATS Streaming client for Python Asyncio',
     long_description='Asyncio based Python client for NATS Streaming',
     classifiers=[
