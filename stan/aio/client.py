@@ -6,7 +6,7 @@ import stan.pb.protocol_pb2 as protocol
 from stan.aio.errors import *
 from time import time as now
 
-__version__ = '0.1.0'
+__version__ = '0.1.2'
 
 # Subject namespaces for clients to ack and connect
 DEFAULT_ACKS_SUBJECT = "_STAN.acks.%s"
