@@ -412,6 +412,7 @@ async def run(loop):
 (The MIT License)
 
 Copyright (c) 2017 Apcera Inc.
+Copyright (c) 2018 Synadia Communications Inc.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to
