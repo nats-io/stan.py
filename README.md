@@ -4,7 +4,7 @@ An asyncio-based ([PEP 3156](https://www.python.org/dev/peps/pep-3156/)) Python 
 
 [![License MIT](https://img.shields.io/npm/l/express.svg)](http://opensource.org/licenses/MIT)
 [![Build Status](https://travis-ci.org/nats-io/asyncio-nats-streaming.svg?branch=master)](http://travis-ci.org/nats-io/asyncio-nats-streaming)
-[![GitHub release](https://img.shields.io/badge/release-v0.1.0-97bd00.svg)](https://github.com/nats-io/asyncio-nats-streaming/releases/tag/v0.1.0)
+[![GitHub release](https://img.shields.io/badge/release-v0.1.0-97bd00.svg)](https://github.com/nats-io/asyncio-nats-streaming/releases/tag/v0.1.2)
 
 ## Supported platforms
 
