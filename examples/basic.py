@@ -44,6 +44,8 @@ async def run(loop):
     # Subscribe to get all messages since beginning.
     sub = await sc.subscribe("hi", start_at='first', cb=cb)
     await asyncio.wait_for(future, 1, loop=loop)
+
+    # Stop receiving messages
     await sub.unsubscribe()
 
     # Close NATS Streaming session
