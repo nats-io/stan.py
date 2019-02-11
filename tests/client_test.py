@@ -13,6 +13,7 @@ from tests.utils import async_test, generate_client_id, start_nats_streaming, \
      StanTestCase, SingleServerTestCase
 
 from time import time
+import logging
 
 class ClientTest(SingleServerTestCase):
 
@@ -1005,6 +1006,76 @@ class SubscriptionsTest(SingleServerTestCase):
             self.assertEqual(len(pmsgs), 3)
 
             await sc.close()
+
+    @async_test
+    async def test_subscribe_error_callback(self):
+        client_id = generate_client_id()
+        with (await nats.connect(io_loop=self.loop)) as nc:
+            sc = STAN()
+            await sc.connect("test-cluster", client_id, nats=nc)
+
+            ex = Exception("random error")
+            error_cb_calls = []
+
+            async def cb_foo(msg):
+                raise ex
+            
+            async def cb_foo_error(err):
+                nonlocal error_cb_calls
+                error_cb_calls.append(err)
+ 
+            sub_foo = await sc.subscribe(
+                "foo", cb=cb_foo, error_cb=cb_foo_error)
+
+            await sc.publish("foo", b"hi")
+
+            # Should try to receive the message now
+            await asyncio.sleep(0.5, loop=self.loop)
+
+            # Error callback should have been called once with our exception
+            self.assertEqual(error_cb_calls, [ex])
+
+            await sc.close()
+
+    @async_test
+    async def test_subscribe_error_callback_fails(self):
+        client_id = generate_client_id()
+        with (
+            await nats.connect(io_loop=self.loop)
+        ) as nc, self.assertLogs(
+            'stan.aio.client', level='ERROR'
+        ) as logs:
+            sc = STAN()
+            await sc.connect("test-cluster", client_id, nats=nc)
+
+            ex = Exception("random error")
+            error_cb_calls = []
+
+            async def cb_foo(msg):
+                raise ex
+            
+            async def cb_foo_error(err):
+                nonlocal error_cb_calls
+                error_cb_calls.append(err)
+                raise err
+ 
+            sub_foo = await sc.subscribe(
+                "foo", cb=cb_foo, error_cb=cb_foo_error)
+
+            await sc.publish("foo", b"hi")
+
+            # Should try to receive the message now
+            await asyncio.sleep(0.5, loop=self.loop)
+
+            # Error callback should have been called once with our exception
+            self.assertEqual(error_cb_calls, [ex])
+
+            await sc.close()
+        
+        # Since our error callback fails, there should be a logging entry
+        self.assertTrue(logs.output[0].startswith(
+            "ERROR:stan.aio.client:Exception in error callback for subscription to 'foo'"
+        ))
 
 if __name__ == '__main__':
     runner = unittest.TextTestRunner(stream=sys.stdout)

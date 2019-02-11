@@ -13,6 +13,7 @@
 #
 
 import asyncio
+import logging
 import random
 import stan.pb.protocol_pb2 as protocol
 from stan.aio.errors import *
@@ -39,6 +40,8 @@ DEFAULT_MAX_PUB_ACKS_INFLIGHT = 16384
 # Max number of pending messages awaiting
 # to be processed on a single subscriptions.
 DEFAULT_PENDING_LIMIT = 8192
+
+logger = logging.getLogger(__name__)
 
 class Client:
     """
@@ -213,8 +216,15 @@ class Client:
                     await self._nc.publish(sub.ack_inbox, msg_ack.SerializeToString())
             except asyncio.CancelledError:
                 break
-            except:
-                # FIXME: async callback to signal error
+            except Exception as ex:
+                if sub.error_cb:
+                    try:
+                        await sub.error_cb(ex)
+                    except:
+                        logger.exception(
+                            "Exception in error callback for subscription to '%s'",
+                            sub.subject
+                        )
                 continue
 
     async def ack(self, msg):
@@ -291,6 +301,7 @@ class Client:
 
     async def subscribe(self, subject,
                         cb=None,
+                        error_cb=None,
                         start_at=None,
                         deliver_all_available=False,
                         sequence=None,
@@ -306,6 +317,9 @@ class Client:
         :param subject: Subject for the NATS Streaming subscription.
 
         :param cb: Callback which will be dispatched the
+
+        :param error_cb: Async callback called on error, with the exception as
+        the sole argument.
 
         :param start_at: One of the following options:
            - 'new_only' (default)
@@ -336,6 +350,7 @@ class Client:
             subject=subject,
             queue=queue,
             cb=cb,
+            error_cb=error_cb,
             manual_acks=manual_acks,
             stan=self,
             )
@@ -463,6 +478,7 @@ class Subscription(object):
                  subject='',
                  queue='',
                  cb=None,
+                 error_cb=None,
                  sid=None,
                  durable_name=None,
                  ack_inbox=None,
@@ -474,6 +490,7 @@ class Subscription(object):
         self.subject = subject
         self.queue = queue
         self.cb = cb
+        self.error_cb = error_cb
         self.inbox = new_guid()
         self.sid = sid
         self.ack_inbox = ack_inbox
