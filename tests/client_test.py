@@ -978,6 +978,34 @@ class SubscriptionsTest(SingleServerTestCase):
             await sc.close()
 
     @async_test
+    async def test_subscribe_get_pending_queue_size(self):
+
+        pmsgs  = [] # Plain subscription messages
+
+        client_id = generate_client_id()
+        with (await nats.connect(io_loop=self.loop)) as nc:
+            sc = STAN()
+            await sc.connect("test-cluster", client_id, nats=nc)
+
+            # Stagger sending messages and then only retrieve based on timestamp
+            for i in range(0, 100):
+                await sc.publish("foo", "hi-{}".format(i).encode())
+
+            async def cb_foo(msg):
+                nonlocal pmsgs
+                nonlocal sc
+                await asyncio.sleep(0.2)
+                await sc.ack(msg)
+                pmsgs.append(msg)
+
+            sub_foo = await sc.subscribe(
+                "foo", deliver_all_available=True, manual_acks=True, cb=cb_foo)
+
+            self.assertTrue(sub_foo.pending_queue_size > 0)
+            await asyncio.sleep(1, loop=self.loop)
+            await sc.close()
+
+    @async_test
     async def test_subscribe_with_manual_acks_missing_redelivery(self):
 
         pmsgs  = [] # Plain subscription messages
