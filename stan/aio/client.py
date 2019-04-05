@@ -501,6 +501,10 @@ class Subscription(object):
         self._msgs_queue = msgs_queue
         self._msgs_task = msgs_task
 
+    @property
+    def pending_queue_size(self):
+        return self._msgs_queue.qsize()
+
     async def unsubscribe(self):
         """
         Remove subscription on a topic in this client.
