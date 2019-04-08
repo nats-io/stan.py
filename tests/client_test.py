@@ -20,7 +20,7 @@ class ClientTest(SingleServerTestCase):
     @async_test
     async def test_connect(self):
         nc = NATS()
-        await nc.connect(io_loop=self.loop)
+        await nc.connect(loop=self.loop)
 
         sc = STAN()
         await sc.connect("test-cluster", "client-123", nats=nc)
@@ -44,7 +44,7 @@ class ClientTest(SingleServerTestCase):
     @async_test
     async def test_sync_publish_and_acks(self):
         nc = NATS()
-        await nc.connect(io_loop=self.loop)
+        await nc.connect(loop=self.loop)
 
         sc = STAN()
         await sc.connect("test-cluster", generate_client_id(), nats=nc)
@@ -69,7 +69,7 @@ class ClientTest(SingleServerTestCase):
     @async_test
     async def test_async_publish_and_acks(self):
         nc = NATS()
-        await nc.connect(io_loop=self.loop)
+        await nc.connect(loop=self.loop)
 
         sc = STAN()
         await sc.connect("test-cluster", generate_client_id(), nats=nc)
@@ -106,7 +106,7 @@ class ClientTest(SingleServerTestCase):
     @async_test
     async def test_async_publish_and_max_acks_inflight(self):
         nc = NATS()
-        await nc.connect(io_loop=self.loop)
+        await nc.connect(loop=self.loop)
 
         sc = STAN()
         await sc.connect("test-cluster", generate_client_id(),
@@ -149,7 +149,7 @@ class ClientTest(SingleServerTestCase):
     @async_test
     async def test_subscribe_receives_new_messages(self):
         nc = NATS()
-        await nc.connect(io_loop=self.loop)
+        await nc.connect(loop=self.loop)
 
         sc = STAN()
         await sc.connect("test-cluster", generate_client_id(), nats=nc)
@@ -188,7 +188,7 @@ class ClientTest(SingleServerTestCase):
     @async_test
     async def test_unsubscribe_from_new_messages(self):
         nc = NATS()
-        await nc.connect(io_loop=self.loop)
+        await nc.connect(loop=self.loop)
 
         sc = STAN()
         await sc.connect("test-cluster", generate_client_id(), nats=nc)
@@ -230,7 +230,7 @@ class ClientTest(SingleServerTestCase):
     @async_test
     async def test_receiving_multiple_subscriptions(self):
         nc = NATS()
-        await nc.connect(io_loop=self.loop)
+        await nc.connect(loop=self.loop)
 
         sc = STAN()
         await sc.connect("test-cluster", generate_client_id(), nats=nc)
@@ -296,7 +296,7 @@ class ClientTest(SingleServerTestCase):
     @async_test
     async def test_closes_cleans_subscriptions(self):
         nc = NATS()
-        await nc.connect(io_loop=self.loop)
+        await nc.connect(loop=self.loop)
 
         sc = STAN()
         await sc.connect("test-cluster", generate_client_id(), nats=nc)
@@ -344,7 +344,7 @@ class ClientTest(SingleServerTestCase):
     @async_test
     async def test_connecting_with_dup_id(self):
         nc = NATS()
-        await nc.connect(io_loop=self.loop)
+        await nc.connect(loop=self.loop)
 
         sc = STAN()
         client_id = generate_client_id()
@@ -399,7 +399,7 @@ class ClientTest(SingleServerTestCase):
     @async_test
     async def test_connect_timeout_wrong_cluster(self):
         nc = NATS()
-        await nc.connect(io_loop=self.loop)
+        await nc.connect(loop=self.loop)
 
         sc = STAN()
         client_id = generate_client_id()
@@ -414,7 +414,7 @@ class ClientTest(SingleServerTestCase):
     @async_test
     async def test_missing_hb_response_replaces_client(self):
         nc = NATS()
-        await nc.connect(io_loop=self.loop)
+        await nc.connect(loop=self.loop)
 
         class STAN2(STAN):
             def __init__(self):
@@ -486,18 +486,18 @@ class ClientTest(SingleServerTestCase):
     async def test_reconnect_without_graceful_close(self):
         client_id = generate_client_id()
 
-        with (await nats.connect(io_loop=self.loop)) as nc:
+        with (await nats.connect(loop=self.loop)) as nc:
             sc = STAN()
             await sc.connect("test-cluster", client_id, nats=nc)
 
-        with (await nats.connect(io_loop=self.loop)) as nc:
+        with (await nats.connect(loop=self.loop)) as nc:
             # Will timeout as NATS Streaming server considers it
             # continue to be connected...
             with self.assertRaises(ErrConnectReqTimeout):
                 sc = STAN()
                 await sc.connect("test-cluster", client_id, nats=nc, connect_timeout=0.25)
 
-        with (await nats.connect(io_loop=self.loop)) as nc:
+        with (await nats.connect(loop=self.loop)) as nc:
             # Will timeout as NATS Streaming server considers it
             # continue to be connected since too soon...
             with self.assertRaises(StanError):
@@ -507,7 +507,7 @@ class ClientTest(SingleServerTestCase):
         # If we space out the reconnects then the server will stop
         # detecting the previous instances of the client.
         await asyncio.sleep(1, loop=self.loop)
-        with (await nats.connect(io_loop=self.loop)) as nc:
+        with (await nats.connect(loop=self.loop)) as nc:
             # Will timeout as NATS Streaming server considers it
             # continue to be connected...
             with self.assertRaises(ErrConnectReqTimeout):
@@ -515,7 +515,7 @@ class ClientTest(SingleServerTestCase):
                 await sc.connect("test-cluster", client_id, nats=nc, connect_timeout=0.25)
 
         await asyncio.sleep(1, loop=self.loop)
-        with (await nats.connect(io_loop=self.loop)) as nc:
+        with (await nats.connect(loop=self.loop)) as nc:
             # Will not timeout as NATS Streaming server considers it
             # continue to be connected...
             sc = STAN()
@@ -577,7 +577,7 @@ class SubscriptionsTest(SingleServerTestCase):
             pmsgs.append(msg)
 
         client_id = generate_client_id()
-        with (await nats.connect(io_loop=self.loop)) as nc:
+        with (await nats.connect(loop=self.loop)) as nc:
             sc = STAN()
             await sc.connect("test-cluster", client_id, nats=nc)
 
@@ -603,7 +603,7 @@ class SubscriptionsTest(SingleServerTestCase):
             await sc.close()
 
         await asyncio.sleep(1, loop=self.loop)
-        with (await nats.connect(io_loop=self.loop)) as nc:
+        with (await nats.connect(loop=self.loop)) as nc:
             sc = STAN()
             await sc.connect("test-cluster", client_id, nats=nc, connect_timeout=10)
 
@@ -665,7 +665,7 @@ class SubscriptionsTest(SingleServerTestCase):
             pmsgs.append(msg)
 
         client_id = generate_client_id()
-        with (await nats.connect(io_loop=self.loop)) as nc:
+        with (await nats.connect(loop=self.loop)) as nc:
             sc = STAN()
             await sc.connect("test-cluster", client_id, nats=nc)
 
@@ -725,7 +725,7 @@ class SubscriptionsTest(SingleServerTestCase):
             sc = STAN()
 
             client_id = "{}-{}".format(generate_client_id(), chr(letter))
-            await nc.connect(name=client_id, io_loop=self.loop)
+            await nc.connect(name=client_id, loop=self.loop)
             await sc.connect("test-cluster", client_id, nats=nc)
             clients[client_id] = Component(nc, sc)
 
@@ -795,7 +795,7 @@ class SubscriptionsTest(SingleServerTestCase):
             pmsgs.append(msg)
 
         client_id = generate_client_id()
-        with (await nats.connect(io_loop=self.loop)) as nc:
+        with (await nats.connect(loop=self.loop)) as nc:
             sc = STAN()
             await sc.connect("test-cluster", client_id, nats=nc)
 
@@ -870,7 +870,7 @@ class SubscriptionsTest(SingleServerTestCase):
             pmsgs.append(msg)
 
         client_id = generate_client_id()
-        with (await nats.connect(io_loop=self.loop)) as nc:
+        with (await nats.connect(loop=self.loop)) as nc:
             sc = STAN()
             await sc.connect("test-cluster", client_id, nats=nc)
 
@@ -922,7 +922,7 @@ class SubscriptionsTest(SingleServerTestCase):
         pmsgs  = [] # Plain subscription messages
 
         client_id = generate_client_id()
-        with (await nats.connect(io_loop=self.loop)) as nc:
+        with (await nats.connect(loop=self.loop)) as nc:
             sc = STAN()
             await sc.connect("test-cluster", client_id, nats=nc)
 
@@ -952,7 +952,7 @@ class SubscriptionsTest(SingleServerTestCase):
         pmsgs  = [] # Plain subscription messages
 
         client_id = generate_client_id()
-        with (await nats.connect(io_loop=self.loop)) as nc:
+        with (await nats.connect(loop=self.loop)) as nc:
             sc = STAN()
             await sc.connect("test-cluster", client_id, nats=nc)
 
@@ -983,7 +983,7 @@ class SubscriptionsTest(SingleServerTestCase):
         pmsgs  = [] # Plain subscription messages
 
         client_id = generate_client_id()
-        with (await nats.connect(io_loop=self.loop)) as nc:
+        with (await nats.connect(loop=self.loop)) as nc:
             sc = STAN()
             await sc.connect("test-cluster", client_id, nats=nc)
 
@@ -1011,7 +1011,7 @@ class SubscriptionsTest(SingleServerTestCase):
         pmsgs  = [] # Plain subscription messages
 
         client_id = generate_client_id()
-        with (await nats.connect(io_loop=self.loop)) as nc:
+        with (await nats.connect(loop=self.loop)) as nc:
             sc = STAN()
             await sc.connect("test-cluster", client_id, nats=nc)
 
@@ -1038,7 +1038,7 @@ class SubscriptionsTest(SingleServerTestCase):
     @async_test
     async def test_subscribe_error_callback(self):
         client_id = generate_client_id()
-        with (await nats.connect(io_loop=self.loop)) as nc:
+        with (await nats.connect(loop=self.loop)) as nc:
             sc = STAN()
             await sc.connect("test-cluster", client_id, nats=nc)
 
@@ -1069,7 +1069,7 @@ class SubscriptionsTest(SingleServerTestCase):
     async def test_subscribe_error_callback_fails(self):
         client_id = generate_client_id()
         with (
-            await nats.connect(io_loop=self.loop)
+            await nats.connect(loop=self.loop)
         ) as nc, self.assertLogs(
             'stan.aio.client', level='ERROR'
         ) as logs:
