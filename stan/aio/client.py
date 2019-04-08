@@ -135,7 +135,7 @@ class Client:
 
         msg = None
         try:
-            msg = await self._nc.timed_request(
+            msg = await self._nc.request(
                 self._discover_subject,
                 payload,
                 timeout=self._connect_timeout,
@@ -401,7 +401,7 @@ class Client:
         req.subject = subject
         req.inbox = sub.inbox
 
-        msg = await self._nc.timed_request(
+        msg = await self._nc.request(
             self._sub_req_subject,
             req.SerializeToString(),
             self._connect_timeout,
@@ -461,7 +461,7 @@ class Client:
 
         req = protocol.CloseRequest()
         req.clientID = self._client_id
-        msg = await self._nc.timed_request(
+        msg = await self._nc.request(
             self._close_req_subject,
             req.SerializeToString(),
             self._connect_timeout,
@@ -527,7 +527,7 @@ class Subscription(object):
         if self.durable_name is not None:
             req.durableName = self.durable_name
 
-        msg = await self._nc.timed_request(
+        msg = await self._nc.request(
             self._sc._unsub_req_subject,
             req.SerializeToString(),
             self._sc._connect_timeout,
@@ -560,7 +560,7 @@ class Subscription(object):
         if self.durable_name is not None:
             req.durableName = self.durable_name
 
-        msg = await self._nc.timed_request(
+        msg = await self._nc.request(
             self._sc._sub_close_req_subject,
             req.SerializeToString(),
             self._sc._connect_timeout,
