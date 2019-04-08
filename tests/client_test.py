@@ -172,7 +172,7 @@ class ClientTest(SingleServerTestCase):
             await sc.publish("hi", b'hello')
 
         try:
-            asyncio.wait_for(future, 2, loop=self.loop)
+            await asyncio.wait_for(future, 2, loop=self.loop)
         except:
             pass
 
@@ -214,7 +214,7 @@ class ClientTest(SingleServerTestCase):
             await sc.publish("hi", b'hello')
 
         try:
-            asyncio.sleep(2, loop=self.loop)
+            await asyncio.sleep(2, loop=self.loop)
         except:
             pass
 
@@ -319,7 +319,7 @@ class ClientTest(SingleServerTestCase):
             await sc.publish("hi", b'hello')
 
         try:
-            asyncio.wait_for(future, 2, loop=self.loop)
+            await asyncio.wait_for(future, 2, loop=self.loop)
         except:
             pass
 
@@ -332,7 +332,7 @@ class ClientTest(SingleServerTestCase):
         await sc.close()
 
         # Should have removed acks and HBs subscriptions.
-        self.assertEqual(len(nc._subs), 0)
+        self.assertEqual(len(nc._subs), 1)
         self.assertEqual(sc._hb_inbox, None)
         self.assertEqual(sc._hb_inbox_sid, None)
         self.assertEqual(sc._ack_subject, None)
@@ -372,7 +372,7 @@ class ClientTest(SingleServerTestCase):
             await sc.publish("hi", b'hello')
 
         try:
-            asyncio.wait_for(future, 2, loop=self.loop)
+            await asyncio.wait_for(future, 2, loop=self.loop)
         except:
             pass
 
@@ -385,7 +385,7 @@ class ClientTest(SingleServerTestCase):
         await sc.close()
 
         # Should have removed acks and HBs subscriptions.
-        self.assertEqual(len(nc._subs), 0)
+        self.assertEqual(len(nc._subs), 1)
         scs = [sc, sc_2]
         for s in scs:
             self.assertEqual(s._hb_inbox, None)
@@ -406,7 +406,7 @@ class ClientTest(SingleServerTestCase):
 
         with self.assertRaises(ErrConnectReqTimeout):
             await sc.connect("test-cluster-missing", client_id,
-                             nats=nc, connect_timeout=0.1)
+                             nats=nc, connect_timeout=0.3)
 
         await nc.close()
         self.assertFalse(nc.is_connected)
@@ -452,7 +452,7 @@ class ClientTest(SingleServerTestCase):
             await sc.publish("hi", b'hello')
 
         try:
-            asyncio.wait_for(future, 2, loop=self.loop)
+            await asyncio.wait_for(future, 2, loop=self.loop)
         except:
             pass
 
@@ -477,7 +477,7 @@ class ClientTest(SingleServerTestCase):
             self.assertEqual(s._ack_subject_sid, None)
 
         # Should have removed acks and HBs subscriptions.
-        self.assertEqual(len(nc._subs), 0)
+        self.assertEqual(len(nc._subs), 1)
 
         await nc.close()
         self.assertFalse(nc.is_connected)
@@ -539,7 +539,7 @@ class ClientTest(SingleServerTestCase):
                 await sc.publish("hi", b'hello')
 
             try:
-                asyncio.wait_for(future, 2, loop=self.loop)
+                await asyncio.wait_for(future, 2, loop=self.loop)
             except:
                 pass
 

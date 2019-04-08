@@ -26,5 +26,5 @@ setup(
     license='Apache 2 License',
     packages=['stan', 'stan.aio', 'stan.pb'],
     zip_safe=True,
-    install_requires=['protobuf>=3.4','asyncio-nats-client>=0.5.0'],
+    install_requires=['protobuf>=3.4','asyncio-nats-client>=0.7.0'],
 )
