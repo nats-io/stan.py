@@ -1,4 +1,4 @@
-# stan.py - NATS Streaming Python3/Asyncio Client
+# NATS Streaming Python3/Asyncio Client
 
 An asyncio based Python3 client for the [NATS Streaming messaging system](http://nats.io/documentation/streaming/nats-streaming-intro/) platform.
 
