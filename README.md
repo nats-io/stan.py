@@ -1,16 +1,16 @@
-# NATS Streaming Asyncio Client
+# stan.py - NATS Streaming Python3/Asyncio Client
 
-An asyncio-based ([PEP 3156](https://www.python.org/dev/peps/pep-3156/)) Python 3 client for the [NATS Streaming messaging system](http://nats.io/documentation/streaming/nats-streaming-intro/) platform.
+An asyncio based Python3 client for the [NATS Streaming messaging system](http://nats.io/documentation/streaming/nats-streaming-intro/) platform.
 
 [![License Apache 2.0](https://img.shields.io/badge/License-Apache2-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
-[![Build Status](https://travis-ci.org/nats-io/asyncio-nats-streaming.svg?branch=master)](http://travis-ci.org/nats-io/asyncio-nats-streaming)
-[![GitHub release](https://img.shields.io/badge/release-v0.1.2-97bd00.svg)](https://github.com/nats-io/asyncio-nats-streaming/releases/tag/v0.1.2)
+[![Build Status](https://travis-ci.org/nats-io/stan.py.svg?branch=master)](http://travis-ci.org/nats-io/stan.py)
+[![Versions](https://img.shields.io/pypi/pyversions/asyncio-nats-streaming.svg)](https://pypi.org/project/asyncio-nats-streaming)
 
 ## Supported platforms
 
 Should be compatible with at least [Python +3.5](https://docs.python.org/3.5/library/asyncio.html).
 
-## Getting Started
+## Installing
 
 ```bash
 pip install asyncio-nats-streaming
