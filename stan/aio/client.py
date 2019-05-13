@@ -24,6 +24,7 @@ __version__ = '0.2.0'
 # Subject namespaces for clients to ack and connect
 DEFAULT_ACKS_SUBJECT = "_STAN.acks.%s"
 DEFAULT_DISCOVER_SUBJECT = "_STAN.discover.%s"
+DEFAULT_INBOX_SUBJECT = "_INBOX.%s"
 
 # Ack timeout in seconds
 DEFAULT_ACK_WAIT = 30
@@ -107,7 +108,7 @@ class Client:
 
         # Subjects
         self._discover_subject = DEFAULT_DISCOVER_SUBJECT % self._cluster_id
-        self._hb_inbox = new_guid()
+        self._hb_inbox = DEFAULT_INBOX_SUBJECT % new_guid()
         self._ack_subject = DEFAULT_ACKS_SUBJECT % new_guid()
 
         # Pending pub acks inflight
@@ -491,7 +492,7 @@ class Subscription(object):
         self.queue = queue
         self.cb = cb
         self.error_cb = error_cb
-        self.inbox = new_guid()
+        self.inbox = DEFAULT_INBOX_SUBJECT % new_guid()
         self.sid = sid
         self.ack_inbox = ack_inbox
         self.durable_name = durable_name
