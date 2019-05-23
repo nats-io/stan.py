@@ -18,6 +18,7 @@ import random
 import stan.pb.protocol_pb2 as protocol
 from stan.aio.errors import *
 from time import time as now
+from nats.aio.errors import ErrConnectionClosed
 
 __version__ = '0.3.0'
 
@@ -41,6 +42,13 @@ DEFAULT_MAX_PUB_ACKS_INFLIGHT = 16384
 # Max number of pending messages awaiting
 # to be processed on a single subscriptions.
 DEFAULT_PENDING_LIMIT = 8192
+
+PROTOCOL_ONE = 1
+
+# Default interval (in seconds) at which a connection sends a PING to the server
+DEFAULT_PING_INTERVAL = 5
+# Default number of PINGs without a response before the connection is considered lost.
+DEFAULT_PING_MAX_OUT = 3
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +88,16 @@ class Client:
         # Map of subscriptions related to the NATS Streaming session.
         self._sub_map = {}
 
+        self._conn_lost_cb = None
+        self._ping_sub = None
+        self._ping_bytes = None
+        self._ping_requests = None
+        self._ping_inbox = None
+        self._ping_interval = None
+        self._ping_max_out = None
+        self._ping_out = 0
+        self._ping_server_task = None
+
     def __repr__(self):
         return "<nats streaming client v{}>".format(__version__)
 
@@ -87,6 +105,9 @@ class Client:
                       nats=None,
                       connect_timeout=DEFAULT_CONNECT_TIMEOUT,
                       max_pub_acks_inflight=DEFAULT_MAX_PUB_ACKS_INFLIGHT,
+                      ping_interval=DEFAULT_PING_INTERVAL,
+                      ping_max_out=DEFAULT_PING_MAX_OUT,
+                      conn_lost_cb=None,
                       loop=None,
                       ):
         """
@@ -99,6 +120,8 @@ class Client:
         self._client_id = client_id
         self._loop = loop
         self._connect_timeout = connect_timeout
+        self._conn_id = bytes(new_guid(), "utf-8")
+        self._conn_lost_cb = conn_lost_cb
 
         if nats is not None:
             self._nc = nats
@@ -110,6 +133,7 @@ class Client:
         self._discover_subject = DEFAULT_DISCOVER_SUBJECT % self._cluster_id
         self._hb_inbox = DEFAULT_INBOX_SUBJECT % new_guid()
         self._ack_subject = DEFAULT_ACKS_SUBJECT % new_guid()
+        self._ping_inbox = DEFAULT_INBOX_SUBJECT % new_guid()
 
         # Pending pub acks inflight
         self._pending_pub_acks_queue = asyncio.Queue(
@@ -128,10 +152,20 @@ class Client:
             )
         await self._nc.flush()
 
+        # Ping subscription
+        self._ping_sub = await self._nc.subscribe(
+            self._ping_inbox,
+            cb=self._process_ping_response,
+        )
+
         # Start NATS Streaming session by sending ConnectRequest
         creq = protocol.ConnectRequest()
         creq.clientID = self._client_id
         creq.heartbeatInbox = self._hb_inbox
+        creq.connID = self._conn_id
+        creq.protocol = PROTOCOL_ONE
+        creq.pingInterval = ping_interval
+        creq.pingMaxOut = ping_max_out
         payload = creq.SerializeToString()
 
         msg = None
@@ -162,6 +196,25 @@ class Client:
         self._close_req_subject = resp.closeRequests
         self._sub_close_req_subject = resp.subCloseRequests
 
+        unsub_ping_sub = True
+        if resp.protocol >= PROTOCOL_ONE:
+            if resp.pingInterval != 0:
+                unsub_ping_sub = False
+
+                self._ping_requests = resp.pingRequests
+                self._ping_interval = resp.pingInterval
+                self._ping_max_out = resp.pingMaxOut
+                ping = protocol.Ping()
+                ping.connID = self._conn_id
+                self._ping_bytes = ping.SerializeToString()
+                self._ping_server_task = self._loop.create_task(
+                    self._ping_server())
+
+        if unsub_ping_sub:
+            await self._nc.unsubscribe(self._ping_sub)
+            self._ping_sub = None
+            self._conn_id = b''
+
     async def _process_heartbeats(self, msg):
         """
         Receives heartbeats sent to the client by the server.
@@ -189,6 +242,28 @@ class Client:
         except:
             # TODO: Check for protocol error
             return
+
+    async def _ping_server(self):
+        """
+        Sends a PING (contianing connection's ID) to the server at intervals specified
+        by ping_interval. Everytime a PING is sent, the number of outstanding PINGs is increased.
+        If the total number is > than the ping_max_out option, then the connection is closed,
+        and conn_lost_cb callback is invoked if one was specified.
+        """
+        while True:
+            try:
+                await asyncio.sleep(self._ping_interval)
+                self._ping_out += 1
+                if self._ping_out > self._ping_max_out:
+                    await self._close_due_to_ping(StanError("stan: connection lost due to PING failure"))
+                    break
+                try:
+                    await self._nc.publish_request(self._ping_requests, self._ping_inbox, self._ping_bytes,                    )
+                except ErrConnectionClosed as e:
+                    await self._close_due_to_ping(StanError(e))
+                    break
+            except asyncio.CancelledError:
+                break
 
     async def _process_msg(self, sub):
         """
@@ -228,6 +303,20 @@ class Client:
                         )
                 continue
 
+    async def _process_ping_response(self, msg):
+        """
+        Receives PING responses from the server.
+        If the response contains an error message, the connection is closed
+        and the conn_lost_cb callback is invoked if one was specified.
+        Otherwise _ping_out is reset to 0 indicating that connection is fine
+        """
+        ping_resp = protocol.PingResponse()
+        ping_resp.ParseFromString(msg.data)
+        if ping_resp.error != "":
+            await self._close_due_to_ping(StanError(ping_resp.error))
+            return
+        self._ping_out = 0
+
     async def ack(self, msg):
         """
         Used to manually acks a message.
@@ -260,6 +349,7 @@ class Client:
         pe.guid = guid
         pe.subject = subject
         pe.data = payload
+        pe.connID = self._conn_id
 
         # Control max inflight pubs for the client with a buffered queue.
         await self._pending_pub_acks_queue.put(None)
@@ -430,6 +520,13 @@ class Client:
 
         # Remove the core NATS Streaming subscriptions.
         try:
+            if self._ping_sub is not None:
+                await self._nc.unsubscribe(self._ping_sub)
+                self._ping_sub = None
+                self._ping_inbox = None
+            if self._ping_server_task is not None:
+                self._ping_server_task.cancel()
+                self._ping_server_task = None
             if self._hb_inbox_sid is not None:
                 await self._nc.unsubscribe(self._hb_inbox_sid)
                 self._hb_inbox = None
@@ -451,6 +548,12 @@ class Client:
             except:
                 continue
         self._sub_map = {}
+
+    async def _close_due_to_ping(self, err):
+        await self._close()
+        if self._conn_lost_cb is not None:
+            await self._conn_lost_cb(err)
+            self._conn_lost_cb = None
 
     async def close(self):
         """
