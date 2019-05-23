@@ -11,7 +11,7 @@ import nats
 import time
 import unittest
 from tests.utils import async_test, generate_client_id, start_nats_streaming, \
-     restart_nats_streaming_servers, StanTestCase, SingleServerTestCase
+     StanTestCase, SingleServerTestCase
 
 from time import time
 import logging
@@ -550,7 +550,14 @@ class ClientTest(SingleServerTestCase):
     @async_test
     async def test_ping_responses_trigger_conn_lost_cb(self):
         nc = NATS()
-        await nc.connect(reconnect_time_wait=1, loop=self.loop)
+        await nc.connect(loop=self.loop)
+
+        class STAN2(STAN):
+            def __init__(self):
+                STAN.__init__(self)
+            async def _process_heartbeats(self, msg):
+                pass
+
         expected_client_replaced_str = "client has been replaced or is no longer registered"
         received_error_str = ""
         future = asyncio.Future(loop=self.loop)
@@ -559,10 +566,12 @@ class ClientTest(SingleServerTestCase):
             received_error_str = str(err)
             future.set_result(True)
 
-        sc = STAN()
-        await sc.connect("test-cluster", generate_client_id(), nats=nc, ping_interval=1, ping_max_out=4, conn_lost_cb=conn_lost_cb)
+        sc = STAN2()
+        client_id = generate_client_id()
+        await sc.connect("test-cluster", client_id, nats=nc, ping_interval=1, ping_max_out=10, conn_lost_cb=conn_lost_cb)
 
-        restart_nats_streaming_servers(self.server_pool)
+        sc_2 = STAN()
+        await sc_2.connect("test-cluster", client_id, nats=nc)
 
         try:
             await asyncio.wait_for(future, 4, loop=self.loop)
@@ -570,6 +579,12 @@ class ClientTest(SingleServerTestCase):
             pass
 
         self.assertEqual(received_error_str, expected_client_replaced_str)
+
+        await sc_2.close()
+
+        with self.assertRaises(StanError):
+            await sc.close()
+
         self.assertTrue(nc.is_connected)
 
         await nc.close()
@@ -578,13 +593,14 @@ class ClientTest(SingleServerTestCase):
     @async_test
     async def test_missing_ping_responses_trigger_conn_lost_cb(self):
         nc = NATS()
-        await nc.connect(reconnect_time_wait=1, loop=self.loop)
+        await nc.connect(loop=self.loop)
 
         class STAN2(STAN):
             def __init__(self):
                 STAN.__init__(self)
             async def _process_ping_response(self, msg):
                 pass
+
         expected_ping_max_out_reached_str = "stan: connection lost due to PING failure"
         received_error_str = ""
         future = asyncio.Future(loop=self.loop)
@@ -594,12 +610,10 @@ class ClientTest(SingleServerTestCase):
             future.set_result(True)
 
         sc = STAN2()
-        await sc.connect("test-cluster", generate_client_id(), nats=nc, ping_interval=1, ping_max_out=2, conn_lost_cb=conn_lost_cb)
-
-        restart_nats_streaming_servers(self.server_pool)
+        await sc.connect("test-cluster", generate_client_id(), nats=nc, ping_interval=1, ping_max_out=3, conn_lost_cb=conn_lost_cb)
 
         try:
-            await asyncio.wait_for(future, 4, loop=self.loop)
+            await asyncio.wait_for(future, 5, loop=self.loop)
         except:
             pass
 
