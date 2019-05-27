@@ -5,6 +5,7 @@ from nats.aio.client import Client as NATS
 from stan.aio.client import Client as STAN
 from stan.aio.errors import *
 
+
 import sys
 import nats
 import time
@@ -446,10 +447,10 @@ class ClientTest(SingleServerTestCase):
 
         # Start a subscription and wait to receive all the messages
         # which have been sent so far.
-        sub = await sc.subscribe("hi", cb=cb)
+        sub = await sc_2.subscribe("hi", cb=cb)
 
         for i in range(0, 10):
-            await sc.publish("hi", b'hello')
+            await sc_2.publish("hi", b'hello')
 
         try:
             await asyncio.wait_for(future, 2, loop=self.loop)
@@ -545,6 +546,81 @@ class ClientTest(SingleServerTestCase):
 
             self.assertEqual(len(msgs), 10)
             await sc.close()
+
+    @async_test
+    async def test_ping_responses_trigger_conn_lost_cb(self):
+        nc = NATS()
+        await nc.connect(loop=self.loop)
+
+        class STAN2(STAN):
+            def __init__(self):
+                STAN.__init__(self)
+            async def _process_heartbeats(self, msg):
+                pass
+
+        expected_client_replaced_str = "client has been replaced or is no longer registered"
+        received_error_str = ""
+        future = asyncio.Future(loop=self.loop)
+        async def conn_lost_cb(err):
+            nonlocal received_error_str
+            received_error_str = str(err)
+            future.set_result(True)
+
+        sc = STAN2()
+        client_id = generate_client_id()
+        await sc.connect("test-cluster", client_id, nats=nc, ping_interval=1, ping_max_out=10, conn_lost_cb=conn_lost_cb)
+
+        sc_2 = STAN()
+        await sc_2.connect("test-cluster", client_id, nats=nc)
+
+        try:
+            await asyncio.wait_for(future, 4, loop=self.loop)
+        except:
+            pass
+
+        self.assertEqual(received_error_str, expected_client_replaced_str)
+
+        await sc_2.close()
+
+        with self.assertRaises(StanError):
+            await sc.close()
+
+        self.assertTrue(nc.is_connected)
+
+        await nc.close()
+        self.assertFalse(nc.is_connected)
+
+    @async_test
+    async def test_missing_ping_responses_trigger_conn_lost_cb(self):
+        nc = NATS()
+        await nc.connect(loop=self.loop)
+
+        class STAN2(STAN):
+            def __init__(self):
+                STAN.__init__(self)
+            async def _process_ping_response(self, msg):
+                pass
+
+        expected_ping_max_out_reached_str = "stan: connection lost due to PING failure"
+        received_error_str = ""
+        future = asyncio.Future(loop=self.loop)
+        async def conn_lost_cb(err):
+            nonlocal received_error_str
+            received_error_str = str(err)
+            future.set_result(True)
+
+        sc = STAN2()
+        await sc.connect("test-cluster", generate_client_id(), nats=nc, ping_interval=1, ping_max_out=3, conn_lost_cb=conn_lost_cb)
+
+        try:
+            await asyncio.wait_for(future, 5, loop=self.loop)
+        except:
+            pass
+
+        self.assertEqual(received_error_str, expected_ping_max_out_reached_str)
+
+        await nc.close()
+        self.assertFalse(nc.is_connected)
 
 class SubscriptionsTest(SingleServerTestCase):
 

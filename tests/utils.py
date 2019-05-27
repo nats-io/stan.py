@@ -130,7 +130,6 @@ class SingleServerTestCase(StanTestCase):
             gnatsd.stop()
         self.loop.close()
 
-
 def start_nats_streaming(server: StanServer):
     server.start()
 
