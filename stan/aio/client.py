@@ -20,7 +20,7 @@ from stan.aio.errors import *
 from time import time as now
 from nats.aio.errors import ErrConnectionClosed
 
-__version__ = '0.3.0'
+__version__ = '0.4.0'
 
 # Subject namespaces for clients to ack and connect
 DEFAULT_ACKS_SUBJECT = "_STAN.acks.%s"
