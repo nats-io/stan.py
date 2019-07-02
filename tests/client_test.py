@@ -43,6 +43,20 @@ class ClientTest(SingleServerTestCase):
         self.assertFalse(nc.is_connected)
 
     @async_test
+    async def test_connect_with_non_borrowed_nats(self):
+        sc = STAN()
+        await sc.connect("test-cluster", "client-123", loop=self.loop)
+
+        self.assertTrue(sc._pub_prefix != None)
+        self.assertTrue(sc._sub_req_subject != None)
+        self.assertTrue(sc._unsub_req_subject != None)
+        self.assertTrue(sc._close_req_subject != None)
+        self.assertTrue(sc._sub_close_req_subject != None)
+
+        await sc.close()
+        self.assertFalse(sc._nc.is_connected)
+
+    @async_test
     async def test_sync_publish_and_acks(self):
         nc = NATS()
         await nc.connect(loop=self.loop)
@@ -1123,11 +1137,11 @@ class SubscriptionsTest(SingleServerTestCase):
 
             async def cb_foo(msg):
                 raise ex
-            
+
             async def cb_foo_error(err):
                 nonlocal error_cb_calls
                 error_cb_calls.append(err)
- 
+
             sub_foo = await sc.subscribe(
                 "foo", cb=cb_foo, error_cb=cb_foo_error)
 
@@ -1157,12 +1171,12 @@ class SubscriptionsTest(SingleServerTestCase):
 
             async def cb_foo(msg):
                 raise ex
-            
+
             async def cb_foo_error(err):
                 nonlocal error_cb_calls
                 error_cb_calls.append(err)
                 raise err
- 
+
             sub_foo = await sc.subscribe(
                 "foo", cb=cb_foo, error_cb=cb_foo_error)
 
@@ -1175,7 +1189,7 @@ class SubscriptionsTest(SingleServerTestCase):
             self.assertEqual(error_cb_calls, [ex])
 
             await sc.close()
-        
+
         # Since our error callback fails, there should be a logging entry
         self.assertTrue(logs.output[0].startswith(
             "ERROR:stan.aio.client:Exception in error callback for subscription to 'foo'"
