@@ -15,10 +15,12 @@
 import asyncio
 import logging
 import random
-import stan.pb.protocol_pb2 as protocol
-from stan.aio.errors import *
 from time import time as now
+
+import stan.pb.protocol_pb2 as protocol
+from nats import NATS
 from nats.aio.errors import ErrConnectionClosed
+from stan.aio.errors import *
 
 __version__ = '0.4.0'
 
@@ -109,6 +111,7 @@ class Client:
                       ping_max_out=DEFAULT_PING_MAX_OUT,
                       conn_lost_cb=None,
                       loop=None,
+                      nats_kwargs=None,
                       ):
         """
         Starts a session with a NATS Streaming cluster.
@@ -124,10 +127,21 @@ class Client:
         self._conn_lost_cb = conn_lost_cb
 
         if nats is not None:
+            if nats_kwargs is not None:
+                raise ValueError('nats_kwargs cannot be set when using a '
+                                 'borrowed NATS connection')
+            self._nats_conn_is_borrowed = True
             self._nc = nats
             # NATS Streaming client should use same event loop
             # as the borrowed NATS connection.
             self._loop = self._nc._loop
+        else:
+            if self._nc is None:
+                self._nc = NATS()
+            if nats_kwargs is None:
+                nats_kwargs = {}
+            nats_kwargs['io_loop'] = self._loop
+            await self._nc.connect(**nats_kwargs)
 
         # Subjects
         self._discover_subject = DEFAULT_DISCOVER_SUBJECT % self._cluster_id
@@ -572,6 +586,9 @@ class Client:
             )
         resp = protocol.CloseResponse()
         resp.ParseFromString(msg.data)
+
+        if not self._nats_conn_is_borrowed:
+            await self._nc.close()
 
         if resp.error != "":
             raise StanError(resp.error)
