@@ -411,6 +411,7 @@ class Client:
                         deliver_all_available=False,
                         sequence=None,
                         time=None,
+                        timedelta=True,
                         manual_acks=False,
                         queue=None,
                         ack_wait=DEFAULT_ACK_WAIT,
@@ -439,6 +440,8 @@ class Client:
         receiving the messages.
 
         :param time: Unix timestamp after which the messages will be delivered.
+        
+        :param timedelta: True to use a timedelta, False to use a specific time
 
         :param manual_acks: Disables auto ack functionality in the subscription
         callback so that it is implemented by the user instead.
@@ -494,7 +497,10 @@ class Client:
             req.startPosition = protocol.LastReceived
         elif start_at == 'time':
             req.startPosition = protocol.TimeDeltaStart
-            req.startTimeDelta = int(now() - time) * 1000000000
+            if timedelta == True:
+                req.startTimeDelta = int(now() - time) * 1000000000
+            else:
+                req.startTimeDelta = time
         elif start_at == 'sequence':
             req.startPosition = protocol.SequenceStart
             req.startSequence = sequence
