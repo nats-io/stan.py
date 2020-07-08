@@ -1,6 +1,6 @@
 # NATS Streaming Python3/Asyncio Client
 
-An asyncio based Python3 client for the [NATS Streaming messaging system](http://nats.io/documentation/streaming/nats-streaming-intro/) platform.
+An asyncio based Python3 client for the [NATS Streaming messaging system](https://docs.nats.io/nats-streaming-concepts/intro) platform.
 
 [![License Apache 2.0](https://img.shields.io/badge/License-Apache2-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Build Status](https://travis-ci.org/nats-io/stan.py.svg?branch=master)](http://travis-ci.org/nats-io/stan.py)
