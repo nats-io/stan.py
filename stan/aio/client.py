@@ -562,13 +562,17 @@ class Client:
             except:
                 continue
         self._sub_map = {}
-
+    
     async def _close_due_to_ping(self, err):
-        await self._close()
-        if self._conn_lost_cb is not None:
-            await self._conn_lost_cb(err)
-            self._conn_lost_cb = None
+        
+        async def _shield_close_due_to_ping():
+            await self._close()
+            if self._conn_lost_cb is not None:
+                await self._conn_lost_cb(err)
+                self._conn_lost_cb = None
 
+        await asyncio.shield(_shield_close_due_to_ping(), loop=self._loop)
+        
     async def close(self):
         """
         Close terminates a session with NATS Streaming.
