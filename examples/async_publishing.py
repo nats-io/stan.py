@@ -19,7 +19,7 @@ from stan.aio.client import Client as STAN
 async def run(loop):
     nc = NATS()
     sc = STAN()
-    await nc.connect(io_loop=loop)
+    await nc.connect("demo.nats.io", loop=loop)
     await sc.connect("test-cluster", "client-123", nats=nc)
 
     async def ack_handler(ack):
