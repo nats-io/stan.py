@@ -560,7 +560,7 @@ class ClientTest(SingleServerTestCase):
 
             self.assertEqual(len(msgs), 10)
             await sc.close()
-
+    
     @async_test
     async def test_ping_responses_trigger_conn_lost_cb(self):
         nc = NATS()
@@ -576,6 +576,10 @@ class ClientTest(SingleServerTestCase):
         received_error_str = ""
         future = asyncio.Future(loop=self.loop)
         async def conn_lost_cb(err):
+            # Added an await on something here, to illustrate that
+            # cancelling the ping-task, used to also cancel this callback.
+            await asyncio.sleep(0.1, loop=self.loop)
+
             nonlocal received_error_str
             received_error_str = str(err)
             future.set_result(True)
@@ -619,6 +623,10 @@ class ClientTest(SingleServerTestCase):
         received_error_str = ""
         future = asyncio.Future(loop=self.loop)
         async def conn_lost_cb(err):
+            # Added an await on something here, to illustrate that
+            # cancelling the ping-task, used to also cancel this callback.
+            await asyncio.sleep(0.1, loop=self.loop)
+            
             nonlocal received_error_str
             received_error_str = str(err)
             future.set_result(True)
